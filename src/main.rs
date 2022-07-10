@@ -1,8 +1,8 @@
-use wgpu::{Surface, util::DeviceExt};
+use wgpu::util::DeviceExt;
 use winit::{
     event::*,
     event_loop::{ControlFlow, EventLoop},
-    window::{WindowBuilder, Window, self}
+    window::{WindowBuilder, Window}
 };
 
 fn main() {
@@ -15,8 +15,6 @@ fn run_app() {
     let window = WindowBuilder::new().with_inner_size(winit::dpi::PhysicalSize::new(1280, 720)).build(&event_loop).unwrap();
     
     let mut app = App::new(&window);
-    let mut obj = 0;
-    let mut toggle_cooldown = 1.0;
 
     event_loop.run(move |event, _, control_flow| match event {
         Event::WindowEvent { 
@@ -32,36 +30,11 @@ fn run_app() {
                 },
                 .. 
             } => *control_flow = ControlFlow::Exit,
-            WindowEvent::KeyboardInput {
-                input: KeyboardInput {
-                    state: ElementState::Pressed,
-                    virtual_keycode: Some(VirtualKeyCode::Space),
-                    ..
-                },
-                ..
-            } if toggle_cooldown <= 0.0 => {
-                obj = match obj {
-                    0 => 1,
-                    1 => 0,
-                    _ => 0
-                };
-                toggle_cooldown = 1.0;
-            },
-            WindowEvent::Resized(new_size) => {
-                app.resize(*new_size);
-            }
-            WindowEvent::ScaleFactorChanged { new_inner_size, .. } => {
-                app.resize(**new_inner_size);
-            }
-            WindowEvent::CursorMoved { position, ..} => {
-                app.clear_color.g = position.x / app.size.width as f64;
-                app.clear_color.b = position.y / app.size.height as f64;
-            }
-            _ => {}
+            _ => app.input(event)
         }
         Event::RedrawRequested(window_id) if window_id == window.id() => {
             app.update();
-            match app.render(obj) {
+            match app.render(app.input_state.obj) {
                 Ok(_) => {},
                 Err(wgpu::SurfaceError::Lost) => app.resize(app.size),
                 Err(wgpu::SurfaceError::OutOfMemory) => *control_flow = ControlFlow::Exit,
@@ -69,8 +42,16 @@ fn run_app() {
             }
         }
         Event::MainEventsCleared => {
-            toggle_cooldown -= 0.01;
+            if app.input_state.space_pressed && app.input_state.toggle_cooldown <= 0.0 {
+                app.input_state.obj = match app.input_state.obj {
+                    0 => 1,
+                    1 => 0,
+                    _ => 0
+                };
+                app.input_state.toggle_cooldown = 1.0;
+            }
             window.request_redraw();
+            app.input_state.toggle_cooldown -= 0.01;
         }
         _ => {}
     });
@@ -84,7 +65,14 @@ struct App {
     clear_color: wgpu::Color,
     render_pipeline: wgpu::RenderPipeline,
     obj1: RenderObject,
-    obj2: RenderObject
+    obj2: RenderObject,
+    input_state: InputState
+}
+
+struct InputState {
+    space_pressed: bool,
+    toggle_cooldown: f32,
+    obj: u32
 }
 
 #[repr(C)]
@@ -122,7 +110,6 @@ struct RenderObject {
 }
 
 impl App {
-
     fn new(window: &Window) -> Self {
         let size = window.inner_size();
         let instance = wgpu::Instance::new(wgpu::Backends::all());
@@ -255,7 +242,8 @@ impl App {
             clear_color: wgpu::Color { r: 0.0, g: 0.0, b: 0.0, a: 1.0 },
             render_pipeline,
             obj1,
-            obj2
+            obj2,
+            input_state: InputState { space_pressed: false, toggle_cooldown: 1.0, obj: 0 }
         }
     }
 
@@ -268,8 +256,33 @@ impl App {
         }
     }
 
-    fn input(&mut self, event: &WindowEvent) -> bool {
-        false
+    fn input(&mut self, event: &WindowEvent) {
+        match event {
+            WindowEvent::CursorMoved { position, ..} => {
+                self.clear_color.g = position.x / self.size.width as f64;
+                self.clear_color.b = position.y / self.size.height as f64;
+            }
+            WindowEvent::KeyboardInput { 
+                input: KeyboardInput {
+                    state,
+                    virtual_keycode: Some(VirtualKeyCode::Space),
+                    ..
+                },
+                ..
+            } => {
+                match state {
+                    ElementState::Pressed => self.input_state.space_pressed = true,
+                    ElementState::Released => self.input_state.space_pressed = false
+                }
+            }
+            WindowEvent::Resized(new_size) => {
+                self.resize(*new_size);
+            }
+            WindowEvent::ScaleFactorChanged { new_inner_size, .. } => {
+                self.resize(**new_inner_size);
+            }
+            _ => {}
+        }
     }
 
     fn update(&mut self) {
@@ -299,15 +312,9 @@ impl App {
 
             render_pass.set_pipeline(&self.render_pipeline);
             if obj == 0 {
-                render_pass.set_vertex_buffer(0, self.obj1.vertices.slice(..));
-                render_pass.set_index_buffer(self.obj1.indices.slice(..), wgpu::IndexFormat::Uint16);
-                render_pass.draw_indexed(0..self.obj1.num_indices, 0, 0..1);
-                //App::render_obj(&mut render_pass, &self.obj1);
+                App::render_obj(&mut render_pass, &self.obj1);
             } else if obj == 1 {
-                render_pass.set_vertex_buffer(0, self.obj2.vertices.slice(..));
-                render_pass.set_index_buffer(self.obj2.indices.slice(..), wgpu::IndexFormat::Uint16);
-                render_pass.draw_indexed(0..self.obj2.num_indices, 0, 0..1);
-                //App::render_obj(&mut render_pass, &self.obj2);
+               App::render_obj(&mut render_pass, &self.obj2);
             }
         }
 
@@ -316,7 +323,7 @@ impl App {
         Ok(())
     }
 
-    fn render_obj<'a>(render_pass: &'a mut wgpu::RenderPass<'a>, obj: &'a RenderObject) {
+    fn render_obj<'a>(render_pass: &mut wgpu::RenderPass<'a>, obj: &'a RenderObject) {
         render_pass.set_vertex_buffer(0, obj.vertices.slice(..));
         render_pass.set_index_buffer(obj.indices.slice(..), wgpu::IndexFormat::Uint16);
         render_pass.draw_indexed(0..obj.num_indices, 0, 0..1);
