@@ -2,7 +2,7 @@
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct Vertex {
     pub position: [f32; 3],
-    pub color: [f32; 3]
+    pub tex_coords: [f32; 2]
 }
 
 impl Vertex {
@@ -19,14 +19,14 @@ impl Vertex {
                 wgpu::VertexAttribute {
                     offset: std::mem::size_of::<[f32; 3]>() as wgpu::BufferAddress,
                     shader_location: 1,
-                    format: wgpu::VertexFormat::Float32x3
+                    format: wgpu::VertexFormat::Float32x2
                 }
             ]
         }
     }
 }
 
-pub fn create_wgpu_context(window: &winit::window::Window) -> (wgpu::Surface, wgpu::Device, wgpu::Queue, wgpu::SurfaceConfiguration, wgpu::RenderPipeline) {
+pub fn create_wgpu_context(window: &winit::window::Window) -> (wgpu::Surface, wgpu::Device, wgpu::Queue, wgpu::SurfaceConfiguration, wgpu::ShaderModule) {
     let size = window.inner_size();
     let instance = wgpu::Instance::new(wgpu::Backends::all());
     let surface = unsafe {
@@ -63,48 +63,78 @@ pub fn create_wgpu_context(window: &winit::window::Window) -> (wgpu::Surface, wg
         source: wgpu::ShaderSource::Wgsl(include_str!("shader.wgsl").into())
     });
 
-    let render_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-        label: Some("pipeline layout bububub"),
-        bind_group_layouts: &[],
-        push_constant_ranges: &[]
+    (surface, device, queue, config, shader)
+}
+
+pub fn build_texture(bind_group_layout: &wgpu::BindGroupLayout, tex_bytes: &[u8], name: &str, device: &wgpu::Device, queue: &wgpu::Queue) -> (wgpu::BindGroup, wgpu::Texture) {
+    let (view, sampler, tex) = load_texture(device, queue, tex_bytes, name);
+    let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+        layout: bind_group_layout,
+        entries: &[
+            wgpu::BindGroupEntry {
+                binding: 0,
+                resource: wgpu::BindingResource::TextureView(&view),
+            },
+            wgpu::BindGroupEntry {
+                binding: 1,
+                resource: wgpu::BindingResource::Sampler(&sampler)
+            } 
+        ],
+        label: Some("bind group")
     });
 
-    let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-        label: Some("the actual pipline"),
-        layout: Some(&render_pipeline_layout),
-        vertex: wgpu::VertexState {
-            module: &shader,
-            entry_point: "vs_main",
-            buffers: &[
-                Vertex::desc()
-            ]
-        },
-        fragment: Some(wgpu::FragmentState {
-            module: &shader,
-            entry_point: "fs_main",
-            targets: &[Some(wgpu::ColorTargetState {
-                format: config.format,
-                blend: Some(wgpu::BlendState::REPLACE),
-                write_mask: wgpu::ColorWrites::ALL
-            })]
-        }),
-        primitive: wgpu::PrimitiveState {
-            topology: wgpu::PrimitiveTopology::TriangleList,
-            strip_index_format: None,
-            front_face: wgpu::FrontFace::Ccw,
-            cull_mode: Some(wgpu::Face::Back),
-            polygon_mode: wgpu::PolygonMode::Fill,
-            unclipped_depth: false,
-            conservative: false
-        },
-        depth_stencil: None,
-        multisample: wgpu::MultisampleState {
-            count: 1,
-            mask: !0,
-            alpha_to_coverage_enabled: false
-        },
-        multiview: None
+    (bind_group, tex)
+}
+
+fn load_texture(device: &wgpu::Device, queue: &wgpu::Queue, data: &[u8], name: &str) -> (wgpu::TextureView, wgpu::Sampler, wgpu::Texture) {
+    let tex_img = image::load_from_memory(data).unwrap();
+    let tex_rgba = tex_img.to_rgba8();
+
+    use image::GenericImageView;
+    let dims = tex_img.dimensions();
+
+    let tex_size = wgpu::Extent3d {
+        width: dims.0,
+        height: dims.1,
+        depth_or_array_layers: 1
+    };
+
+    let tex = device.create_texture(&wgpu::TextureDescriptor {
+        size: tex_size,
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: wgpu::TextureFormat::Rgba8UnormSrgb,
+        usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+        label: Some(name)
     });
 
-    (surface, device, queue, config, render_pipeline)
+    queue.write_texture(
+        wgpu::ImageCopyTexture {
+            texture: &tex,
+            mip_level: 0,
+            origin: wgpu::Origin3d::ZERO,
+            aspect: wgpu::TextureAspect::All
+        },
+        &tex_rgba,
+        wgpu::ImageDataLayout {
+            offset: 0,
+            bytes_per_row: std::num::NonZeroU32::new(4 * dims.0),
+            rows_per_image: std::num::NonZeroU32::new(dims.1)
+        },
+        tex_size
+    );
+
+    let view = tex.create_view(&wgpu::TextureViewDescriptor::default());
+    let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+        address_mode_u: wgpu::AddressMode::ClampToEdge,
+        address_mode_v: wgpu::AddressMode::ClampToEdge,
+        address_mode_w: wgpu::AddressMode::ClampToEdge,
+        mag_filter: wgpu::FilterMode::Linear,
+        min_filter: wgpu::FilterMode::Nearest,
+        mipmap_filter: wgpu::FilterMode::Linear,
+        ..Default::default()
+    });
+
+    (view, sampler, tex)
 }

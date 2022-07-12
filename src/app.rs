@@ -24,21 +24,46 @@ pub struct InputState {
 struct RenderObject {
     vertices: wgpu::Buffer,
     indices: wgpu::Buffer,
-    num_indices: u32
+    num_indices: u32,
+    bind_group: wgpu::BindGroup
 }
 
 impl App {
     pub fn new(window: &winit::window::Window) -> Self {
-        let (surface, device, queue, config, render_pipeline) = graphics::create_wgpu_context(window);
+        let (surface, device, queue, config, shader) = graphics::create_wgpu_context(window);
+        
+        let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        multisampled: false,
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true }
+                    },
+                    count: None
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    count: None
+                }
+            ],
+            label: Some("bind group layout")
+        });
+
+        let render_pipeline = App::build_pipeline(&[&bind_group_layout], &device, &shader, &config);
 
         let obj1 = RenderObject {
             vertices: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
                 label: Some("Buffer bu"),
                 contents: bytemuck::cast_slice(&[
-                    graphics::Vertex { position: [0.5, 0.5, 0.0], color: [1.0, 0.0, 0.0] },
-                    graphics::Vertex { position: [-0.5, 0.5, 0.0], color: [0.0, 1.0, 0.0] },
-                    graphics::Vertex { position: [0.5, -0.5, 0.0], color: [0.0, 0.0, 1.0] },
-                    graphics::Vertex { position: [-0.5, -0.5, 0.0], color: [1.0, 0.0, 0.0] },
+                    graphics::Vertex { position: [0.5, 0.5, 0.0], tex_coords: [1.0, 0.0] },
+                    graphics::Vertex { position: [-0.5, 0.5, 0.0], tex_coords: [0.0, 0.0] },
+                    graphics::Vertex { position: [0.5, -0.5, 0.0], tex_coords: [1.0, 1.0] },
+                    graphics::Vertex { position: [-0.5, -0.5, 0.0], tex_coords: [0.0, 1.0] },
                 ]),
                 usage: wgpu::BufferUsages::VERTEX
             }),
@@ -50,16 +75,17 @@ impl App {
                 ]),
                 usage: wgpu::BufferUsages::INDEX
             }),
-            num_indices: 6
+            num_indices: 6,
+            bind_group: graphics::build_texture(&bind_group_layout, include_bytes!("../res/tex/bu.png"), "object 1 tex", &device, &queue).0
         };
 
         let obj2 = RenderObject {
             vertices: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
                 label: Some("Buffer bu"),
                 contents: bytemuck::cast_slice(&[
-                    graphics::Vertex { position: [0.0, 0.5, 0.0], color: [1.0, 0.0, 0.0] },
-                    graphics::Vertex { position: [-0.5, -0.5, 0.0], color: [0.0, 1.0, 0.0] },
-                    graphics::Vertex { position: [0.5, -0.5, 0.0], color: [0.0, 0.0, 1.0] },
+                    graphics::Vertex { position: [0.0, 0.5, 0.0], tex_coords: [0.5, 0.0] },
+                    graphics::Vertex { position: [-0.5, -0.5, 0.0], tex_coords: [0.0, 1.0] },
+                    graphics::Vertex { position: [0.5, -0.5, 0.0], tex_coords: [1.0, 1.0] },
                 ]),
                 usage: wgpu::BufferUsages::VERTEX
             }),
@@ -70,7 +96,8 @@ impl App {
                 ]),
                 usage: wgpu::BufferUsages::INDEX
             }),
-            num_indices: 3
+            num_indices: 3,
+            bind_group: graphics::build_texture(&bind_group_layout, include_bytes!("../res/tex/bu2.png"), "object 1 tex", &device, &queue).0
         };
 
         Self {
@@ -87,6 +114,55 @@ impl App {
         }
     }
 
+    fn build_pipeline(bind_group_layouts: &[&wgpu::BindGroupLayout], device: &wgpu::Device, shader: &wgpu::ShaderModule, config: &wgpu::SurfaceConfiguration) -> wgpu::RenderPipeline {
+        let render_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("pipeline layout bububub"),
+            bind_group_layouts,
+            push_constant_ranges: &[]
+        });
+    
+        let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("the actual pipline"),
+            layout: Some(&render_pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &shader,
+                entry_point: "vs_main",
+                buffers: &[
+                    graphics::Vertex::desc()
+                ]
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &shader,
+                entry_point: "fs_main",
+                targets: &[Some(wgpu::ColorTargetState {
+                    format: config.format,
+                    blend: Some(wgpu::BlendState::REPLACE),
+                    write_mask: wgpu::ColorWrites::ALL
+                })]
+            }),
+            primitive: wgpu::PrimitiveState {
+                topology: wgpu::PrimitiveTopology::TriangleList,
+                strip_index_format: None,
+                front_face: wgpu::FrontFace::Ccw,
+                cull_mode: Some(wgpu::Face::Back),
+                polygon_mode: wgpu::PolygonMode::Fill,
+                unclipped_depth: false,
+                conservative: false
+            },
+            depth_stencil: None,
+            multisample: wgpu::MultisampleState {
+                count: 1,
+                mask: !0,
+                alpha_to_coverage_enabled: false
+            },
+            multiview: None
+        });
+
+        render_pipeline
+    }
+
+    
+
     pub fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
         if new_size.width > 0 && new_size.height > 0 {
             self.size = new_size;
@@ -99,7 +175,7 @@ impl App {
     pub fn input(&mut self, event: &WindowEvent) {
         match event {
             WindowEvent::CursorMoved { position, ..} => {
-                self.clear_color.g = position.x / self.size.width as f64;
+                self.clear_color.r = position.x / self.size.width as f64;
                 self.clear_color.b = position.y / self.size.height as f64;
             }
             WindowEvent::KeyboardInput { 
@@ -151,10 +227,10 @@ impl App {
             });
 
             render_pass.set_pipeline(&self.render_pipeline);
-            if obj == 0 {
-                App::render_obj(&mut render_pass, &self.obj1);
-            } else if obj == 1 {
-               App::render_obj(&mut render_pass, &self.obj2);
+            match obj {
+                0 => App::render_obj(&mut render_pass, &self.obj1),
+                1 => App::render_obj(&mut render_pass, &self.obj2),
+                _ => {}   
             }
         }
 
@@ -164,6 +240,7 @@ impl App {
     }
 
     fn render_obj<'a>(render_pass: &mut wgpu::RenderPass<'a>, obj: &'a RenderObject) {
+        render_pass.set_bind_group(0, &obj.bind_group, &[]);
         render_pass.set_vertex_buffer(0, obj.vertices.slice(..));
         render_pass.set_index_buffer(obj.indices.slice(..), wgpu::IndexFormat::Uint16);
         render_pass.draw_indexed(0..obj.num_indices, 0, 0..1);
