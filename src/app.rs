@@ -67,7 +67,7 @@ impl App {
             label: Some("global_bind_group_layout")
         });
 
-        let render_pipeline = App::build_pipeline(&[&bind_group_layout], &device, &shader, &config);
+        let render_pipeline = graphics::build_pipeline(&[&bind_group_layout], &device, &shader, &config);
 
         let camera = Camera::new(
             (0.5, 0.5, 1.0).into(),
@@ -147,55 +147,6 @@ impl App {
             camera_uniform
         }
     }
-
-    fn build_pipeline(bind_group_layouts: &[&wgpu::BindGroupLayout], device: &wgpu::Device, shader: &wgpu::ShaderModule, config: &wgpu::SurfaceConfiguration) -> wgpu::RenderPipeline {
-        let render_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("main_pipeline_layout"),
-            bind_group_layouts,
-            push_constant_ranges: &[]
-        });
-    
-        let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("main_pipeline"),
-            layout: Some(&render_pipeline_layout),
-            vertex: wgpu::VertexState {
-                module: &shader,
-                entry_point: "vs_main",
-                buffers: &[
-                    graphics::Vertex::desc()
-                ]
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &shader,
-                entry_point: "fs_main",
-                targets: &[Some(wgpu::ColorTargetState {
-                    format: config.format,
-                    blend: Some(wgpu::BlendState::REPLACE),
-                    write_mask: wgpu::ColorWrites::ALL
-                })]
-            }),
-            primitive: wgpu::PrimitiveState {
-                topology: wgpu::PrimitiveTopology::TriangleList,
-                strip_index_format: None,
-                front_face: wgpu::FrontFace::Ccw,
-                cull_mode: Some(wgpu::Face::Back),
-                polygon_mode: wgpu::PolygonMode::Fill,
-                unclipped_depth: false,
-                conservative: false
-            },
-            depth_stencil: None,
-            multisample: wgpu::MultisampleState {
-                count: 1,
-                mask: !0,
-                alpha_to_coverage_enabled: false
-            },
-            multiview: None
-        });
-
-        render_pipeline
-    }
-
-    
 
     pub fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
         if new_size.width > 0 && new_size.height > 0 {

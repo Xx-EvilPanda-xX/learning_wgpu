@@ -1,3 +1,5 @@
+const WIREFRAME: bool = false;
+
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct Vertex {
@@ -42,7 +44,7 @@ pub fn create_wgpu_context(window: &winit::window::Window) -> (wgpu::Surface, wg
 
     let (device, queue) = pollster::block_on(adapter.request_device(
         &wgpu::DeviceDescriptor {
-            features: wgpu::Features::empty(),
+            features: wgpu::Features::POLYGON_MODE_LINE,
             limits: wgpu::Limits::default(),
             label: Some("main_device")
         },
@@ -64,6 +66,53 @@ pub fn create_wgpu_context(window: &winit::window::Window) -> (wgpu::Surface, wg
     });
 
     (surface, device, queue, config, shader)
+}
+
+pub fn build_pipeline(bind_group_layouts: &[&wgpu::BindGroupLayout], device: &wgpu::Device, shader: &wgpu::ShaderModule, config: &wgpu::SurfaceConfiguration) -> wgpu::RenderPipeline {
+    let render_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+        label: Some("main_pipeline_layout"),
+        bind_group_layouts,
+        push_constant_ranges: &[]
+    });
+
+    let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        label: Some("main_pipeline"),
+        layout: Some(&render_pipeline_layout),
+        vertex: wgpu::VertexState {
+            module: &shader,
+            entry_point: "vs_main",
+            buffers: &[
+                Vertex::desc()
+            ]
+        },
+        fragment: Some(wgpu::FragmentState {
+            module: &shader,
+            entry_point: "fs_main",
+            targets: &[Some(wgpu::ColorTargetState {
+                format: config.format,
+                blend: Some(wgpu::BlendState::REPLACE),
+                write_mask: wgpu::ColorWrites::ALL
+            })]
+        }),
+        primitive: wgpu::PrimitiveState {
+            topology: wgpu::PrimitiveTopology::TriangleList,
+            strip_index_format: None,
+            front_face: wgpu::FrontFace::Ccw,
+            cull_mode: Some(wgpu::Face::Back),
+            polygon_mode: if WIREFRAME { wgpu::PolygonMode::Line } else { wgpu::PolygonMode::Fill },
+            unclipped_depth: false,
+            conservative: false
+        },
+        depth_stencil: None,
+        multisample: wgpu::MultisampleState {
+            count: 1,
+            mask: !0,
+            alpha_to_coverage_enabled: false
+        },
+        multiview: None
+    });
+
+    render_pipeline
 }
 
 pub fn build_bind_group(bind_group_layout: &wgpu::BindGroupLayout, tex_bytes: &[u8], name: &str, device: &wgpu::Device, queue: &wgpu::Queue, uniforms: Vec<&wgpu::Buffer>) -> wgpu::BindGroup {

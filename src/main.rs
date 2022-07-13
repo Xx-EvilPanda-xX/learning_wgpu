@@ -55,7 +55,7 @@ fn run_app() {
                 app.input_state.toggle_cooldown = 1.0;
             }
             window.request_redraw();
-            app.input_state.toggle_cooldown -= 0.005;
+            app.input_state.toggle_cooldown -= 0.01;
         }
         _ => {}
     });
