@@ -28,7 +28,7 @@ impl Vertex {
 
 pub fn create_wgpu_context(window: &winit::window::Window) -> (wgpu::Surface, wgpu::Device, wgpu::Queue, wgpu::SurfaceConfiguration, wgpu::ShaderModule) {
     let size = window.inner_size();
-    let instance = wgpu::Instance::new(wgpu::Backends::all());
+    let instance = wgpu::Instance::new(wgpu::Backends::VULKAN);
     let surface = unsafe {
         instance.create_surface(window)
     };
@@ -44,7 +44,7 @@ pub fn create_wgpu_context(window: &winit::window::Window) -> (wgpu::Surface, wg
         &wgpu::DeviceDescriptor {
             features: wgpu::Features::empty(),
             limits: wgpu::Limits::default(),
-            label: Some("Device thingy")
+            label: Some("main_device")
         },
         None
     )).unwrap();
@@ -59,31 +59,50 @@ pub fn create_wgpu_context(window: &winit::window::Window) -> (wgpu::Surface, wg
     surface.configure(&device, &config);
 
     let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-        label: Some("shader bu"),
+        label: Some("shader at shader.wgsl"),
         source: wgpu::ShaderSource::Wgsl(include_str!("shader.wgsl").into())
     });
 
     (surface, device, queue, config, shader)
 }
 
-pub fn build_texture(bind_group_layout: &wgpu::BindGroupLayout, tex_bytes: &[u8], name: &str, device: &wgpu::Device, queue: &wgpu::Queue) -> (wgpu::BindGroup, wgpu::Texture) {
-    let (view, sampler, tex) = load_texture(device, queue, tex_bytes, name);
+pub fn build_bind_group(bind_group_layout: &wgpu::BindGroupLayout, tex_bytes: &[u8], name: &str, device: &wgpu::Device, queue: &wgpu::Queue, uniforms: Vec<&wgpu::Buffer>) -> wgpu::BindGroup {
+    let (view, sampler, _) = load_texture(device, queue, tex_bytes, name);
+
+    let mut entries = Vec::new();
+
+    for (i, buffer) in uniforms.iter().enumerate() {
+        entries.push(
+            wgpu::BindGroupEntry {
+                binding: i as u32,
+                resource: wgpu::BindingResource::Buffer(buffer.as_entire_buffer_binding())
+            }
+        );
+    }
+
+    entries.push(
+        wgpu::BindGroupEntry {
+            binding: uniforms.len() as u32,
+            resource: wgpu::BindingResource::TextureView(&view),
+        }
+    );
+
+    entries.push(
+        wgpu::BindGroupEntry {
+            binding: uniforms.len() as u32 + 1,
+            resource: wgpu::BindingResource::Sampler(&sampler)
+        }
+    );
+
+    // println!("{:#?}", entries);
+
     let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
         layout: bind_group_layout,
-        entries: &[
-            wgpu::BindGroupEntry {
-                binding: 0,
-                resource: wgpu::BindingResource::TextureView(&view),
-            },
-            wgpu::BindGroupEntry {
-                binding: 1,
-                resource: wgpu::BindingResource::Sampler(&sampler)
-            } 
-        ],
-        label: Some("bind group")
+        entries: &entries,
+        label: Some(name)
     });
 
-    (bind_group, tex)
+    bind_group
 }
 
 fn load_texture(device: &wgpu::Device, queue: &wgpu::Queue, data: &[u8], name: &str) -> (wgpu::TextureView, wgpu::Sampler, wgpu::Texture) {

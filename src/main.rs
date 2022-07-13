@@ -7,6 +7,7 @@ use winit::{
 
 pub mod graphics;
 mod app;
+mod camera;
 
 fn main() {
     run_app();

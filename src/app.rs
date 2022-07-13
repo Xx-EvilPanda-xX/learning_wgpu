@@ -1,4 +1,5 @@
 use crate::graphics;
+use crate::camera::{Camera, CameraUniform};
 use wgpu::util::DeviceExt;
 use winit::event::{WindowEvent, KeyboardInput, VirtualKeyCode, ElementState};
 
@@ -12,7 +13,9 @@ pub struct App {
     render_pipeline: wgpu::RenderPipeline,
     obj1: RenderObject,
     obj2: RenderObject,
-    pub input_state: InputState
+    pub input_state: InputState,
+    camera: Camera,
+    camera_uniform: CameraUniform,
 }
 
 pub struct InputState {
@@ -36,6 +39,16 @@ impl App {
             entries: &[
                 wgpu::BindGroupLayoutEntry {
                     binding: 0,
+                    visibility: wgpu::ShaderStages::VERTEX,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
                     visibility: wgpu::ShaderStages::FRAGMENT,
                     ty: wgpu::BindingType::Texture {
                         multisampled: false,
@@ -45,20 +58,39 @@ impl App {
                     count: None
                 },
                 wgpu::BindGroupLayoutEntry {
-                    binding: 1,
+                    binding: 2,
                     visibility: wgpu::ShaderStages::FRAGMENT,
                     ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
                     count: None
                 }
             ],
-            label: Some("bind group layout")
+            label: Some("global_bind_group_layout")
         });
 
         let render_pipeline = App::build_pipeline(&[&bind_group_layout], &device, &shader, &config);
 
+        let camera = Camera::new(
+            (0.5, 0.5, 1.0).into(),
+            (0.0, 0.0, 0.0).into(),
+            cgmath::Vector3::unit_y(),
+            config.width as f32 / config.height as f32,
+            90.0,
+            0.1,
+            100.0
+        );
+
+        let mut camera_uniform = CameraUniform::new();
+        camera_uniform.update_view_proj(&camera);
+
+        let camera_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("camera_buffer"),
+            contents: bytemuck::cast_slice(&[camera_uniform]),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST
+        });
+
         let obj1 = RenderObject {
             vertices: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("Buffer bu"),
+                label: Some("vertices_obj1"),
                 contents: bytemuck::cast_slice(&[
                     graphics::Vertex { position: [0.5, 0.5, 0.0], tex_coords: [1.0, 0.0] },
                     graphics::Vertex { position: [-0.5, 0.5, 0.0], tex_coords: [0.0, 0.0] },
@@ -68,7 +100,7 @@ impl App {
                 usage: wgpu::BufferUsages::VERTEX
             }),
             indices: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("indioces"),
+                label: Some("indices_obj1"),
                 contents: bytemuck::cast_slice(&[
                     0u16, 1, 2,
                     1, 3, 2
@@ -76,12 +108,12 @@ impl App {
                 usage: wgpu::BufferUsages::INDEX
             }),
             num_indices: 6,
-            bind_group: graphics::build_texture(&bind_group_layout, include_bytes!("../res/tex/bu.png"), "object 1 tex", &device, &queue).0
+            bind_group: graphics::build_bind_group(&bind_group_layout, include_bytes!("../res/tex/bu.png"), "texture_obj1", &device, &queue, vec![&camera_buffer])
         };
 
         let obj2 = RenderObject {
             vertices: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("Buffer bu"),
+                label: Some("vertices_obj2"),
                 contents: bytemuck::cast_slice(&[
                     graphics::Vertex { position: [0.0, 0.5, 0.0], tex_coords: [0.5, 0.0] },
                     graphics::Vertex { position: [-0.5, -0.5, 0.0], tex_coords: [0.0, 1.0] },
@@ -90,14 +122,14 @@ impl App {
                 usage: wgpu::BufferUsages::VERTEX
             }),
             indices: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("indioces"),
+                label: Some("indices_obj2"),
                 contents: bytemuck::cast_slice(&[
                     0u16, 1, 2,
                 ]),
                 usage: wgpu::BufferUsages::INDEX
             }),
             num_indices: 3,
-            bind_group: graphics::build_texture(&bind_group_layout, include_bytes!("../res/tex/bu2.png"), "object 1 tex", &device, &queue).0
+            bind_group: graphics::build_bind_group(&bind_group_layout, include_bytes!("../res/tex/bu2.png"), "texture_obj2", &device, &queue, vec![&camera_buffer])
         };
 
         Self {
@@ -110,19 +142,21 @@ impl App {
             render_pipeline,
             obj1,
             obj2,
-            input_state: InputState { space_pressed: false, toggle_cooldown: 1.0, obj: 0 }
+            input_state: InputState { space_pressed: false, toggle_cooldown: 1.0, obj: 0 },
+            camera,
+            camera_uniform
         }
     }
 
     fn build_pipeline(bind_group_layouts: &[&wgpu::BindGroupLayout], device: &wgpu::Device, shader: &wgpu::ShaderModule, config: &wgpu::SurfaceConfiguration) -> wgpu::RenderPipeline {
         let render_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("pipeline layout bububub"),
+            label: Some("main_pipeline_layout"),
             bind_group_layouts,
             push_constant_ranges: &[]
         });
     
         let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("the actual pipline"),
+            label: Some("main_pipeline"),
             layout: Some(&render_pipeline_layout),
             vertex: wgpu::VertexState {
                 module: &shader,
@@ -209,12 +243,12 @@ impl App {
         let output = self.surface.get_current_texture()?;
         let view = output.texture.create_view(&wgpu::TextureViewDescriptor::default());
         let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-            label: Some("encoder thingy")
+            label: Some("frame_encoder")
         });
 
         {
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("Render pas thiny"),
+                label: Some("main_pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                     view: &view,
                     resolve_target: None,
