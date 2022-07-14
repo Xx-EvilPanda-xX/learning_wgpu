@@ -1,7 +1,11 @@
 use crate::graphics;
+use crate::input;
 use crate::camera::{Camera, CameraUniform};
 use wgpu::util::DeviceExt;
-use winit::event::{WindowEvent, KeyboardInput, VirtualKeyCode, ElementState};
+use winit::dpi::PhysicalPosition;
+use winit::event::DeviceEvent;
+use winit::event::{WindowEvent};
+use winit::window::Window;
 
 pub struct App {
     surface: wgpu::Surface,
@@ -11,17 +15,18 @@ pub struct App {
     pub size: winit::dpi::PhysicalSize<u32>,
     clear_color: wgpu::Color,
     render_pipeline: wgpu::RenderPipeline,
+
     obj1: RenderObject,
     obj2: RenderObject,
-    pub input_state: InputState,
+
+    pub input_state: input::InputState,
+
     camera: Camera,
     camera_uniform: CameraUniform,
-}
 
-pub struct InputState {
-    pub space_pressed: bool,
-    pub toggle_cooldown: f32,
-    pub obj: u32
+    selected_obj: u32,
+    toggle_cooldown: f64,
+    pub delta_time: f64
 }
 
 struct RenderObject {
@@ -138,13 +143,16 @@ impl App {
             queue,
             config,
             size: window.inner_size(),
-            clear_color: wgpu::Color { r: 0.0, g: 0.0, b: 0.0, a: 1.0 },
+            clear_color: wgpu::Color { r: 0.0, g: 0.5, b: 0.0, a: 1.0 },
             render_pipeline,
             obj1,
             obj2,
-            input_state: InputState { space_pressed: false, toggle_cooldown: 1.0, obj: 0 },
+            input_state: input::InputState::new(),
             camera,
-            camera_uniform
+            camera_uniform,
+            selected_obj: 0,
+            toggle_cooldown: 0.0,
+            delta_time: 0.0
         }
     }
 
@@ -157,40 +165,56 @@ impl App {
         }
     }
 
-    pub fn input(&mut self, event: &WindowEvent) {
-        match event {
-            WindowEvent::CursorMoved { position, ..} => {
-                self.clear_color.r = position.x / self.size.width as f64;
-                self.clear_color.b = position.y / self.size.height as f64;
-            }
-            WindowEvent::KeyboardInput { 
-                input: KeyboardInput {
-                    state,
-                    virtual_keycode: Some(VirtualKeyCode::Space),
-                    ..
-                },
-                ..
-            } => {
-                match state {
-                    ElementState::Pressed => self.input_state.space_pressed = true,
-                    ElementState::Released => self.input_state.space_pressed = false
+    pub fn input(&mut self, window_event: Option<&WindowEvent>, device_event: Option<&DeviceEvent>, window: &Window) {
+        if let Some(event) = window_event {
+            match event {
+                WindowEvent::KeyboardInput{ input, .. } => {
+                    self.input_state.update_keyboard(input);
                 }
+                WindowEvent::Resized(new_size) => {
+                    self.resize(*new_size);
+                }
+                WindowEvent::ScaleFactorChanged { new_inner_size, .. } => {
+                    self.resize(**new_inner_size);
+                }
+                _ => {}
             }
-            WindowEvent::Resized(new_size) => {
-                self.resize(*new_size);
+        }
+        if let Some(event) = device_event {
+            match event {
+                DeviceEvent::MouseMotion { delta } => {
+                    self.input_state.update_mouse(delta);
+                    window.set_cursor_position(PhysicalPosition::new(self.size.width / 2, self.size.height / 2)).expect("Failed to set cursor position");
+                }
+                _ => {}
             }
-            WindowEvent::ScaleFactorChanged { new_inner_size, .. } => {
-                self.resize(**new_inner_size);
-            }
-            _ => {}
         }
     }
 
     pub fn update(&mut self) {
+        if self.input_state.space_pressed && self.toggle_cooldown <= 0.0 {
+            self.selected_obj = match self.selected_obj {
+                0 => 1,
+                1 => 0,
+                _ => 0
+            };
+            self.toggle_cooldown = 1.0;
+        }
+        self.toggle_cooldown -= self.delta_time * 5.0;
 
+        let (offset_x, offset_y) = self.input_state.handle_mouse_move();
+        let c = &mut self.clear_color;
+        c.r += offset_x;
+        c.b += offset_y;
+        if c.r > 1.0 { c.r = 1.0; }
+        if c.g > 1.0 { c.g = 1.0; }
+        if c.b > 1.0 { c.b = 1.0; }
+        if c.r < 0.0 { c.r = 0.0; }
+        if c.g < 0.0 { c.g = 0.0; }
+        if c.b < 0.0 { c.b = 0.0; }
     }
 
-    pub fn render(&mut self, obj: u32) -> Result<(), wgpu::SurfaceError> {
+    pub fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
         let output = self.surface.get_current_texture()?;
         let view = output.texture.create_view(&wgpu::TextureViewDescriptor::default());
         let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
@@ -212,7 +236,7 @@ impl App {
             });
 
             render_pass.set_pipeline(&self.render_pipeline);
-            match obj {
+            match self.selected_obj {
                 0 => App::render_obj(&mut render_pass, &self.obj1),
                 1 => App::render_obj(&mut render_pass, &self.obj2),
                 _ => {}   

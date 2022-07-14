@@ -1,4 +1,3 @@
-
 use winit::{
     event::*,
     event_loop::{ControlFlow, EventLoop},
@@ -8,6 +7,7 @@ use winit::{
 pub mod graphics;
 mod app;
 mod camera;
+mod input;
 
 fn main() {
     run_app();
@@ -17,11 +17,13 @@ fn run_app() {
     env_logger::init();
     let event_loop = EventLoop::new();
     let window = WindowBuilder::new().with_inner_size(winit::dpi::PhysicalSize::new(1280, 720)).build(&event_loop).unwrap();
-    
+    window.set_cursor_visible(false);
+
     let mut app = app::App::new(&window);
+    let mut last_frame = std::time::Instant::now();
 
     event_loop.run(move |event, _, control_flow| match event {
-        Event::WindowEvent { 
+        Event::WindowEvent {
             ref event,
             window_id      
         } if window_id == window.id() => match event {
@@ -34,11 +36,19 @@ fn run_app() {
                 },
                 .. 
             } => *control_flow = ControlFlow::Exit,
-            _ => app.input(event)
+            _ => {
+                app.input(Some(event), None, &window);
+            }
+        }
+        Event::DeviceEvent {
+            ref event,
+            ..
+        } => {
+            app.input(None, Some(event), &window);
         }
         Event::RedrawRequested(window_id) if window_id == window.id() => {
             app.update();
-            match app.render(app.input_state.obj) {
+            match app.render() {
                 Ok(_) => {},
                 Err(wgpu::SurfaceError::Lost) => app.resize(app.size),
                 Err(wgpu::SurfaceError::OutOfMemory) => *control_flow = ControlFlow::Exit,
@@ -46,16 +56,10 @@ fn run_app() {
             }
         }
         Event::MainEventsCleared => {
-            if app.input_state.space_pressed && app.input_state.toggle_cooldown <= 0.0 {
-                app.input_state.obj = match app.input_state.obj {
-                    0 => 1,
-                    1 => 0,
-                    _ => 0
-                };
-                app.input_state.toggle_cooldown = 1.0;
-            }
+            let now = std::time::Instant::now();
+            app.delta_time = now.duration_since(last_frame).as_secs_f64();
+            last_frame = now;
             window.request_redraw();
-            app.input_state.toggle_cooldown -= 0.01;
         }
         _ => {}
     });
