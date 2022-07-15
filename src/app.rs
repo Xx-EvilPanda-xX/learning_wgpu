@@ -23,10 +23,13 @@ pub struct App {
 
     camera: Camera,
     camera_uniform: CameraUniform,
+    camera_uniform_buffer: wgpu::Buffer,
 
     selected_obj: u32,
     toggle_cooldown: f64,
-    pub delta_time: f64
+    pub delta_time: f64,
+
+    depth_texture: (wgpu::TextureView, wgpu::Sampler, wgpu::Texture)
 }
 
 struct RenderObject {
@@ -76,18 +79,20 @@ impl App {
 
         let camera = Camera::new(
             (0.5, 0.5, 1.0).into(),
-            (0.0, 0.0, 0.0).into(),
-            cgmath::Vector3::unit_y(),
+            270.0,
+            0.0,
             config.width as f32 / config.height as f32,
             90.0,
             0.1,
-            100.0
+            100.0,
+            0.05,
+            5.0
         );
 
         let mut camera_uniform = CameraUniform::new();
         camera_uniform.update_view_proj(&camera);
 
-        let camera_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        let camera_uniform_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("camera_buffer"),
             contents: bytemuck::cast_slice(&[camera_uniform]),
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST
@@ -97,10 +102,14 @@ impl App {
             vertices: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
                 label: Some("vertices_obj1"),
                 contents: bytemuck::cast_slice(&[
-                    graphics::Vertex { position: [0.5, 0.5, 0.0], tex_coords: [1.0, 0.0] },
-                    graphics::Vertex { position: [-0.5, 0.5, 0.0], tex_coords: [0.0, 0.0] },
-                    graphics::Vertex { position: [0.5, -0.5, 0.0], tex_coords: [1.0, 1.0] },
-                    graphics::Vertex { position: [-0.5, -0.5, 0.0], tex_coords: [0.0, 1.0] },
+                    graphics::Vertex { position: [0.5, 0.5, 0.5], tex_coords: [1.0, 0.0] }, // 0
+                    graphics::Vertex { position: [-0.5, 0.5, 0.5], tex_coords: [0.0, 0.0] }, // 1
+                    graphics::Vertex { position: [0.5, -0.5, 0.5], tex_coords: [1.0, 1.0] }, // 2
+                    graphics::Vertex { position: [-0.5, -0.5, 0.5], tex_coords: [0.0, 1.0] }, // 3
+                    graphics::Vertex { position: [0.5, 0.5, -0.5], tex_coords: [1.0, 0.0] }, // 4
+                    graphics::Vertex { position: [-0.5, 0.5, -0.5], tex_coords: [0.0, 0.0] }, // 5
+                    graphics::Vertex { position: [0.5, -0.5, -0.5], tex_coords: [1.0, 1.0] }, // 6
+                    graphics::Vertex { position: [-0.5, -0.5, -0.5], tex_coords: [0.0, 1.0] }, // 7
                 ]),
                 usage: wgpu::BufferUsages::VERTEX
             }),
@@ -108,12 +117,22 @@ impl App {
                 label: Some("indices_obj1"),
                 contents: bytemuck::cast_slice(&[
                     0u16, 1, 2,
-                    1, 3, 2
+                    1, 3, 2,
+                    1, 5, 3,
+                    5, 7, 3,
+                    0, 4, 1,
+                    4, 5, 1,
+                    5, 4, 7,
+                    4, 6, 7,
+                    4, 0, 6,
+                    0, 2, 6,
+                    2, 3, 6,
+                    3, 7, 6
                 ]),
                 usage: wgpu::BufferUsages::INDEX
             }),
-            num_indices: 6,
-            bind_group: graphics::build_bind_group(&bind_group_layout, include_bytes!("../res/tex/bu.png"), "texture_obj1", &device, &queue, vec![&camera_buffer])
+            num_indices: 36,
+            bind_group: graphics::build_bind_group(&bind_group_layout, include_bytes!("../res/tex/bu.png"), "texture_obj1", &device, &queue, vec![&camera_uniform_buffer])
         };
 
         let obj2 = RenderObject {
@@ -121,21 +140,30 @@ impl App {
                 label: Some("vertices_obj2"),
                 contents: bytemuck::cast_slice(&[
                     graphics::Vertex { position: [0.0, 0.5, 0.0], tex_coords: [0.5, 0.0] },
-                    graphics::Vertex { position: [-0.5, -0.5, 0.0], tex_coords: [0.0, 1.0] },
-                    graphics::Vertex { position: [0.5, -0.5, 0.0], tex_coords: [1.0, 1.0] },
+                    graphics::Vertex { position: [-0.5, -0.5, -0.5], tex_coords: [0.0, 1.0] },
+                    graphics::Vertex { position: [-0.5, -0.5, 0.5], tex_coords: [1.0, 1.0] },
+                    graphics::Vertex { position: [0.5, -0.5, 0.5], tex_coords: [0.0, 1.0] },
+                    graphics::Vertex { position: [0.5, -0.5, -0.5], tex_coords: [1.0, 1.0] },
                 ]),
                 usage: wgpu::BufferUsages::VERTEX
             }),
             indices: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
                 label: Some("indices_obj2"),
                 contents: bytemuck::cast_slice(&[
-                    0u16, 1, 2,
+                    0u16, 2, 3,
+                    0, 1, 2,
+                    0, 4, 1,
+                    0, 3, 4,
+                    3, 2, 4,
+                    2, 1, 4
                 ]),
                 usage: wgpu::BufferUsages::INDEX
             }),
-            num_indices: 3,
-            bind_group: graphics::build_bind_group(&bind_group_layout, include_bytes!("../res/tex/bu2.png"), "texture_obj2", &device, &queue, vec![&camera_buffer])
+            num_indices: 18,
+            bind_group: graphics::build_bind_group(&bind_group_layout, include_bytes!("../res/tex/bu2.png"), "texture_obj2", &device, &queue, vec![&camera_uniform_buffer])
         };
+        
+        let depth_texture = graphics::create_depth_texture(&device, &config, "global_depth_texture");
 
         Self {
             surface,
@@ -150,9 +178,11 @@ impl App {
             input_state: input::InputState::new(),
             camera,
             camera_uniform,
+            camera_uniform_buffer,
             selected_obj: 0,
             toggle_cooldown: 0.0,
-            delta_time: 0.0
+            delta_time: 0.0,
+            depth_texture
         }
     }
 
@@ -192,7 +222,7 @@ impl App {
     }
 
     pub fn update(&mut self) {
-        if self.input_state.space_pressed && self.toggle_cooldown <= 0.0 {
+        if self.input_state.tab_pressed && self.toggle_cooldown <= 0.0 {
             self.selected_obj = match self.selected_obj {
                 0 => 1,
                 1 => 0,
@@ -202,16 +232,23 @@ impl App {
         }
         self.toggle_cooldown -= self.delta_time * 5.0;
 
-        let (offset_x, offset_y) = self.input_state.handle_mouse_move();
+        let mouse_move = self.input_state.get_unhandled_mouse_move();
+
+        let (offset_x, offset_y) = mouse_move;
         let c = &mut self.clear_color;
-        c.r += offset_x;
-        c.b += offset_y;
+        c.r += offset_x / 2500.0;
+        c.b += offset_y / 2500.0;
         if c.r > 1.0 { c.r = 1.0; }
         if c.g > 1.0 { c.g = 1.0; }
         if c.b > 1.0 { c.b = 1.0; }
         if c.r < 0.0 { c.r = 0.0; }
         if c.g < 0.0 { c.g = 0.0; }
         if c.b < 0.0 { c.b = 0.0; }
+
+        self.camera.update_pos(self.input_state.get_movement(), self.delta_time as f32);
+        self.camera.update_look((mouse_move.0 as f32, mouse_move.1 as f32));
+        self.camera_uniform.update_view_proj(&self.camera);
+        self.queue.write_buffer(&self.camera_uniform_buffer, 0, bytemuck::cast_slice(&[self.camera_uniform]));
     }
 
     pub fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
@@ -232,7 +269,14 @@ impl App {
                         store: true
                     }
                 })],
-                depth_stencil_attachment: None
+                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                    view: &self.depth_texture.0,
+                    depth_ops: Some(wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(1.0),
+                        store: true
+                    }),
+                    stencil_ops: None
+                })
             });
 
             render_pass.set_pipeline(&self.render_pipeline);

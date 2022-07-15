@@ -1,3 +1,4 @@
+use cgmath::Vector3;
 use winit::event::{KeyboardInput, VirtualKeyCode, ElementState};
 
 pub struct InputState {
@@ -7,6 +8,7 @@ pub struct InputState {
     pub backward_pressed: bool,
     pub left_pressed: bool,
     pub right_pressed: bool,
+    pub tab_pressed: bool,
     unhandled_mouse_move: (f64, f64),
 }
 
@@ -17,6 +19,7 @@ impl InputState {
     const BACK: VirtualKeyCode = VirtualKeyCode::S;
     const LEFT: VirtualKeyCode = VirtualKeyCode::A;
     const RIGHT: VirtualKeyCode = VirtualKeyCode::D;
+    const TAB: VirtualKeyCode = VirtualKeyCode::Tab;
 
     pub fn new() -> Self {
         InputState {
@@ -26,6 +29,7 @@ impl InputState {
             backward_pressed: false,
             left_pressed: false,
             right_pressed: false,
+            tab_pressed: false,
             unhandled_mouse_move: (0.0, 0.0)
         }
     }
@@ -45,6 +49,7 @@ impl InputState {
                         InputState::BACK => self.backward_pressed = if let ElementState::Pressed = state { true } else { false },
                         InputState::LEFT => self.left_pressed = if let ElementState::Pressed = state { true } else { false },
                         InputState::RIGHT => self.right_pressed = if let ElementState::Pressed = state { true } else { false },
+                        InputState::TAB => self.tab_pressed = if let ElementState::Pressed = state { true } else { false },
                         _ => {}
                     }
                 }
@@ -54,13 +59,34 @@ impl InputState {
 
     pub fn update_mouse(&mut self, delta: &(f64, f64)) {
         self.unhandled_mouse_move = *delta;
-        self.unhandled_mouse_move.0 /= 2500.0;
-        self.unhandled_mouse_move.1 /= 2500.0;
     }
 
-    pub fn handle_mouse_move(&mut self) -> (f64, f64) {
+    pub fn get_unhandled_mouse_move(&mut self) -> (f64, f64) {
         let unhandled = self.unhandled_mouse_move;
         self.unhandled_mouse_move = (0.0, 0.0);
         unhandled
+    }
+
+    pub fn get_movement(&self) -> Vector3<f32> {
+        let mut movement = Vector3::new(0.0, 0.0, 0.0);
+        if self.forward_pressed {
+            movement.x += 1.0;
+        }
+        if self.backward_pressed {
+            movement.x -= 1.0;
+        }
+        if self.right_pressed {
+            movement.z += 1.0;
+        }
+        if self.left_pressed {
+            movement.z -= 1.0;
+        }
+        if self.space_pressed {
+            movement.y += 1.0;
+        }
+        if self.shift_pressed {
+            movement.y -= 1.0;
+        }
+        movement
     }
 }
