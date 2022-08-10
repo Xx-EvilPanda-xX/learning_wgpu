@@ -1,4 +1,4 @@
-use cgmath::{Vector3, Point3, InnerSpace};
+use cgmath::{InnerSpace, Point3, Vector3};
 
 #[derive(Debug)]
 pub struct Camera {
@@ -13,20 +13,31 @@ pub struct Camera {
     znear: f32,
     zfar: f32,
     sens: f32,
-    speed: f32
+    speed: f32,
 }
 
 pub const GL_TO_WGPU: cgmath::Matrix4<f32> = cgmath::Matrix4::new(
-    1.0, 0.0, 0.0, 0.0,
-    0.0, 1.0, 0.0, 0.0,
-    0.0, 0.0, 0.5, 0.0,
-    0.0, 0.0, 0.5, 1.0
+    1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.5, 0.0, 0.0, 0.0, 0.5, 1.0,
 );
 
 impl Camera {
-    const WORLD_UP: Vector3<f32> = Vector3 { x: 0.0, y: 1.0, z: 0.0 };
+    const WORLD_UP: Vector3<f32> = Vector3 {
+        x: 0.0,
+        y: 1.0,
+        z: 0.0,
+    };
 
-    pub fn new(loc: Point3<f32>, yaw: f32, pitch: f32, aspect: f32, fovy: f32, znear: f32, zfar: f32, sens: f32, speed: f32) -> Self {
+    pub fn new(
+        loc: Point3<f32>,
+        yaw: f32,
+        pitch: f32,
+        aspect: f32,
+        fovy: f32,
+        znear: f32,
+        zfar: f32,
+        sens: f32,
+        speed: f32,
+    ) -> Self {
         let mut cam = Camera {
             loc,
             forward: Vector3::new(0.0, 0.0, 0.0),
@@ -39,7 +50,7 @@ impl Camera {
             znear,
             zfar,
             sens,
-            speed
+            speed,
         };
         cam.calc_vecs();
         cam
@@ -55,7 +66,12 @@ impl Camera {
         let s = &self.speed;
         let m = &movement;
 
-        let x = Vector3 { x: self.forward.x, y: 0.0, z: self.forward.z }.normalize();
+        let x = Vector3 {
+            x: self.forward.x,
+            y: 0.0,
+            z: self.forward.z,
+        }
+        .normalize();
         self.loc.x += s * x.x * m.x * dt;
         self.loc.z += s * x.z * m.x * dt;
 
@@ -67,7 +83,7 @@ impl Camera {
 
         self.calc_vecs();
     }
-    
+
     pub fn update_look(&mut self, look: (f32, f32)) {
         self.yaw += self.sens * look.0;
         self.pitch += self.sens * -look.1;
@@ -89,29 +105,14 @@ impl Camera {
     }
 
     fn calc_vecs(&mut self) {
-        let forward = Vector3 { x: self.yaw.to_radians().cos() * self.pitch.to_radians().cos(),
-                                            y: self.pitch.to_radians().sin(),
-                                            z: self.yaw.to_radians().sin() * self.pitch.to_radians().cos() };
-        
+        let forward = Vector3 {
+            x: self.yaw.to_radians().cos() * self.pitch.to_radians().cos(),
+            y: self.pitch.to_radians().sin(),
+            z: self.yaw.to_radians().sin() * self.pitch.to_radians().cos(),
+        };
+
         self.forward = forward.normalize();
         self.right = forward.cross(Camera::WORLD_UP).normalize();
         self.up = self.right.cross(forward).normalize();
-    }
-}
-
-#[repr(C)]
-#[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
-pub struct CameraUniform {
-    view_proj: [[f32; 4]; 4]
-}
-
-impl CameraUniform {
-    pub fn new() -> Self {
-        use cgmath::SquareMatrix;
-        CameraUniform { view_proj: cgmath::Matrix4::identity().into() }
-    }
-
-    pub fn update_view_proj(&mut self, camera: &Camera) {
-        self.view_proj = camera.build_view_proj().into();
     }
 }

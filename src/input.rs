@@ -1,5 +1,5 @@
 use cgmath::Vector3;
-use winit::event::{KeyboardInput, VirtualKeyCode, ElementState};
+use winit::event::{ElementState, KeyboardInput, VirtualKeyCode};
 
 pub struct InputState {
     pub space_pressed: bool,
@@ -30,26 +30,68 @@ impl InputState {
             left_pressed: false,
             right_pressed: false,
             tab_pressed: false,
-            unhandled_mouse_move: (0.0, 0.0)
+            unhandled_mouse_move: (0.0, 0.0),
         }
     }
 
     pub fn update_keyboard(&mut self, input: &KeyboardInput) {
         match input {
-            KeyboardInput { 
+            KeyboardInput {
                 state,
                 virtual_keycode,
                 ..
             } => {
                 if let Some(key) = virtual_keycode {
                     match *key {
-                        InputState::SPACE => self.space_pressed = if let ElementState::Pressed = state { true } else { false },
-                        InputState::SHIFT => self.shift_pressed = if let ElementState::Pressed = state { true } else { false },
-                        InputState::FORWARD => self.forward_pressed = if let ElementState::Pressed = state { true } else { false },
-                        InputState::BACK => self.backward_pressed = if let ElementState::Pressed = state { true } else { false },
-                        InputState::LEFT => self.left_pressed = if let ElementState::Pressed = state { true } else { false },
-                        InputState::RIGHT => self.right_pressed = if let ElementState::Pressed = state { true } else { false },
-                        InputState::TAB => self.tab_pressed = if let ElementState::Pressed = state { true } else { false },
+                        InputState::SPACE => {
+                            self.space_pressed = if let ElementState::Pressed = state {
+                                true
+                            } else {
+                                false
+                            }
+                        }
+                        InputState::SHIFT => {
+                            self.shift_pressed = if let ElementState::Pressed = state {
+                                true
+                            } else {
+                                false
+                            }
+                        }
+                        InputState::FORWARD => {
+                            self.forward_pressed = if let ElementState::Pressed = state {
+                                true
+                            } else {
+                                false
+                            }
+                        }
+                        InputState::BACK => {
+                            self.backward_pressed = if let ElementState::Pressed = state {
+                                true
+                            } else {
+                                false
+                            }
+                        }
+                        InputState::LEFT => {
+                            self.left_pressed = if let ElementState::Pressed = state {
+                                true
+                            } else {
+                                false
+                            }
+                        }
+                        InputState::RIGHT => {
+                            self.right_pressed = if let ElementState::Pressed = state {
+                                true
+                            } else {
+                                false
+                            }
+                        }
+                        InputState::TAB => {
+                            self.tab_pressed = if let ElementState::Pressed = state {
+                                true
+                            } else {
+                                false
+                            }
+                        }
                         _ => {}
                     }
                 }
