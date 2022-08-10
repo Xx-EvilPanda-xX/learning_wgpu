@@ -2,7 +2,7 @@ use crate::camera::Camera;
 use crate::graphics;
 use crate::graphics::RawMatrix;
 use crate::input;
-use cgmath::{Matrix4, SquareMatrix};
+use cgmath::{Vector3, Matrix4, SquareMatrix};
 use wgpu::util::DeviceExt;
 use winit::dpi::PhysicalPosition;
 use winit::event::DeviceEvent;
@@ -116,53 +116,60 @@ impl App {
             vertices: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
                 label: Some("vertices_obj1"),
                 contents: bytemuck::cast_slice(&[
-                    graphics::Vertex {
-                        position: [0.5, 0.5, 0.5],
-                        tex_coords: [1.0, 0.0],
-                    }, // 0
-                    graphics::Vertex {
-                        position: [-0.5, 0.5, 0.5],
-                        tex_coords: [0.0, 0.0],
-                    }, // 1
-                    graphics::Vertex {
-                        position: [0.5, -0.5, 0.5],
-                        tex_coords: [1.0, 1.0],
-                    }, // 2
-                    graphics::Vertex {
-                        position: [-0.5, -0.5, 0.5],
-                        tex_coords: [0.0, 1.0],
-                    }, // 3
-                    graphics::Vertex {
-                        position: [0.5, 0.5, -0.5],
-                        tex_coords: [1.0, 0.0],
-                    }, // 4
-                    graphics::Vertex {
-                        position: [-0.5, 0.5, -0.5],
-                        tex_coords: [0.0, 0.0],
-                    }, // 5
-                    graphics::Vertex {
-                        position: [0.5, -0.5, -0.5],
-                        tex_coords: [1.0, 1.0],
-                    }, // 6
-                    graphics::Vertex {
-                        position: [-0.5, -0.5, -0.5],
-                        tex_coords: [0.0, 1.0],
-                    }, // 7
+                    graphics::Vertex { position: [0.5, 0.5, 0.5], tex_coords: [1.0, 0.0], }, // 0
+                    graphics::Vertex { position: [-0.5, 0.5, 0.5], tex_coords: [0.0, 0.0], }, // 1
+                    graphics::Vertex { position: [0.5, -0.5, 0.5], tex_coords: [1.0, 1.0], }, // 2
+                    graphics::Vertex { position: [-0.5, -0.5, 0.5], tex_coords: [0.0, 1.0], }, // 3
+
+                    graphics::Vertex { position: [-0.5, 0.5, 0.5], tex_coords: [1.0, 0.0], }, // 4
+                    graphics::Vertex { position: [-0.5, 0.5, -0.5], tex_coords: [0.0, 0.0], }, // 5
+                    graphics::Vertex { position: [-0.5, -0.5, 0.5], tex_coords: [1.0, 1.0], }, // 6
+                    graphics::Vertex { position: [-0.5, -0.5, -0.5], tex_coords: [0.0, 1.0], }, // 7
+
+                    graphics::Vertex { position: [0.5, 0.5, 0.5], tex_coords: [1.0, 0.0], }, // 8
+                    graphics::Vertex { position: [0.5, 0.5, -0.5], tex_coords: [0.0, 0.0], }, // 9
+                    graphics::Vertex { position: [-0.5, 0.5, 0.5], tex_coords: [1.0, 1.0], }, // 10
+                    graphics::Vertex { position: [-0.5, 0.5, -0.5], tex_coords: [0.0, 1.0], }, // 11
+
+                    graphics::Vertex { position: [-0.5, 0.5, -0.5], tex_coords: [1.0, 0.0], }, // 12
+                    graphics::Vertex { position: [0.5, 0.5, -0.5], tex_coords: [0.0, 0.0], }, // 13
+                    graphics::Vertex { position: [-0.5, -0.5, -0.5], tex_coords: [1.0, 1.0], }, // 14
+                    graphics::Vertex { position: [0.5, -0.5, -0.5], tex_coords: [0.0, 1.0], }, // 15
+
+                    graphics::Vertex { position: [0.5, 0.5, -0.5], tex_coords: [1.0, 0.0], }, // 16
+                    graphics::Vertex { position: [0.5, 0.5, 0.5], tex_coords: [0.0, 0.0], }, // 17
+                    graphics::Vertex { position: [0.5, -0.5, -0.5], tex_coords: [1.0, 1.0], }, // 18
+                    graphics::Vertex { position: [0.5, -0.5, 0.5], tex_coords: [0.0, 1.0], }, // 19
+
+                    graphics::Vertex { position: [0.5, -0.5, 0.5], tex_coords: [1.0, 0.0], }, // 20
+                    graphics::Vertex { position: [-0.5, -0.5, 0.5], tex_coords: [0.0, 0.0], }, // 21
+                    graphics::Vertex { position: [0.5, -0.5, -0.5], tex_coords: [1.0, 1.0], }, // 22
+                    graphics::Vertex { position: [-0.5, -0.5, -0.5], tex_coords: [0.0, 1.0], }, // 23
                 ]),
                 usage: wgpu::BufferUsages::VERTEX,
             }),
             indices: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
                 label: Some("indices_obj1"),
                 contents: bytemuck::cast_slice(&[
-                    0u16, 1, 2, 1, 3, 2, 1, 5, 3, 5, 7, 3, 0, 4, 1, 4, 5, 1, 5, 4, 7, 4, 6, 7, 4,
-                    0, 6, 0, 2, 6, 2, 3, 6, 3, 7, 6,
+                    0u16, 1, 2,
+                    1, 3, 2,
+                    4, 5, 6,
+                    5, 7, 6,
+                    8, 9, 10,
+                    9, 11, 10,
+                    12, 13, 14,
+                    13, 15, 14,
+                    16, 17, 18,
+                    17, 19, 18,
+                    20, 21, 22,
+                    21, 23, 22,
                 ]),
                 usage: wgpu::BufferUsages::INDEX,
             }),
             model_buf: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
                 label: Some("model_obj1"),
                 contents: bytemuck::cast_slice(&[super::graphics::RawMatrix {
-                    mat: cgmath::Matrix4::identity().into(),
+                    mat: Matrix4::identity().into(),
                 }]),
                 usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             }),
@@ -182,40 +189,30 @@ impl App {
             vertices: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
                 label: Some("vertices_obj2"),
                 contents: bytemuck::cast_slice(&[
-                    graphics::Vertex {
-                        position: [0.0, 0.5, 0.0],
-                        tex_coords: [0.5, 0.0],
-                    },
-                    graphics::Vertex {
-                        position: [-0.5, -0.5, -0.5],
-                        tex_coords: [0.0, 1.0],
-                    },
-                    graphics::Vertex {
-                        position: [-0.5, -0.5, 0.5],
-                        tex_coords: [1.0, 1.0],
-                    },
-                    graphics::Vertex {
-                        position: [0.5, -0.5, 0.5],
-                        tex_coords: [0.0, 1.0],
-                    },
-                    graphics::Vertex {
-                        position: [0.5, -0.5, -0.5],
-                        tex_coords: [1.0, 1.0],
-                    },
+                    graphics::Vertex { position: [0.0, 0.5, 0.0], tex_coords: [0.5, 0.0], },
+                    graphics::Vertex { position: [-0.5, -0.5, -0.5], tex_coords: [0.0, 1.0], },
+                    graphics::Vertex { position: [-0.5, -0.5, 0.5], tex_coords: [1.0, 1.0], },
+                    graphics::Vertex { position: [0.5, -0.5, 0.5], tex_coords: [0.0, 1.0], },
+                    graphics::Vertex { position: [0.5, -0.5, -0.5], tex_coords: [1.0, 1.0], },
                 ]),
                 usage: wgpu::BufferUsages::VERTEX,
             }),
             indices: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
                 label: Some("indices_obj2"),
                 contents: bytemuck::cast_slice(&[
-                    0u16, 2, 3, 0, 1, 2, 0, 4, 1, 0, 3, 4, 3, 2, 4, 2, 1, 4,
+                    0u16, 2, 3,
+                    0, 1, 2,
+                    0, 4, 1,
+                    0, 3, 4,
+                    3, 2, 4,
+                    2, 1, 4,
                 ]),
                 usage: wgpu::BufferUsages::INDEX,
             }),
             model_buf: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
                 label: Some("model_obj2"),
                 contents: bytemuck::cast_slice(&[super::graphics::RawMatrix {
-                    mat: cgmath::Matrix4::identity().into(),
+                    mat: Matrix4::identity().into(),
                 }]),
                 usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             }),
@@ -321,26 +318,15 @@ impl App {
 
         let (offset_x, offset_y) = mouse_move;
         let c = &mut self.clear_color;
+        
         c.r += offset_x / 2500.0;
         c.b += offset_y / 2500.0;
-        if c.r > 1.0 {
-            c.r = 1.0;
-        }
-        if c.g > 1.0 {
-            c.g = 1.0;
-        }
-        if c.b > 1.0 {
-            c.b = 1.0;
-        }
-        if c.r < 0.0 {
-            c.r = 0.0;
-        }
-        if c.g < 0.0 {
-            c.g = 0.0;
-        }
-        if c.b < 0.0 {
-            c.b = 0.0;
-        }
+        if c.r > 1.0 { c.r = 1.0; }
+        if c.g > 1.0 { c.g = 1.0; }
+        if c.b > 1.0 { c.b = 1.0; }
+        if c.r < 0.0 { c.r = 0.0; }
+        if c.g < 0.0 { c.g = 0.0; }
+        if c.b < 0.0 { c.b = 0.0; }
 
         self.camera
             .update_pos(self.input_state.get_movement(), self.delta_time as f32);
@@ -361,8 +347,8 @@ impl App {
             * Matrix4::from_angle_z(cgmath::Rad { 0: now });
 
         let obj2_model = 
-              Matrix4::from_translation(cgmath::Vector3::new(0.0, now.sin(), 0.0))
-            * Matrix4::from_scale(now.sin().abs() + 1.22);
+              Matrix4::from_translation(Vector3::new(0.0, now.sin(), 0.0))
+            * Matrix4::from_scale(now.cos().abs() + 1.22);
 
         self.queue.write_buffer(
             &self.obj1.0.model_buf,

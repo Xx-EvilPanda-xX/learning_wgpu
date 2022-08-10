@@ -18,6 +18,7 @@ fn run_app() {
     let event_loop = EventLoop::new();
     let window = WindowBuilder::new()
         .with_inner_size(winit::dpi::PhysicalSize::new(1280, 720))
+        .with_title("learning_wgpu")
         .build(&event_loop)
         .unwrap();
     window.set_cursor_visible(false);

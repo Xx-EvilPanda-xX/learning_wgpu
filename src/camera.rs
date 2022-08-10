@@ -1,4 +1,4 @@
-use cgmath::{InnerSpace, Point3, Vector3};
+use cgmath::{InnerSpace, Point3, Vector3, Matrix4};
 
 #[derive(Debug)]
 pub struct Camera {
@@ -16,8 +16,11 @@ pub struct Camera {
     speed: f32,
 }
 
-pub const GL_TO_WGPU: cgmath::Matrix4<f32> = cgmath::Matrix4::new(
-    1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.5, 0.0, 0.0, 0.0, 0.5, 1.0,
+pub const GL_TO_WGPU: Matrix4<f32> = Matrix4::new(
+    1.0, 0.0, 0.0, 0.0,
+    0.0, 1.0, 0.0, 0.0,
+    0.0, 0.0, 0.5, 0.0,
+    0.0, 0.0, 0.5, 1.0,
 );
 
 impl Camera {
@@ -56,8 +59,8 @@ impl Camera {
         cam
     }
 
-    pub fn build_view_proj(&self) -> cgmath::Matrix4<f32> {
-        let view = cgmath::Matrix4::look_at_rh(self.loc, self.loc + self.forward, self.up);
+    pub fn build_view_proj(&self) -> Matrix4<f32> {
+        let view = Matrix4::look_at_rh(self.loc, self.loc + self.forward, self.up);
         let proj = cgmath::perspective(cgmath::Deg(self.fovy), self.aspect, self.znear, self.zfar);
         GL_TO_WGPU * proj * view
     }
@@ -70,13 +73,12 @@ impl Camera {
             x: self.forward.x,
             y: 0.0,
             z: self.forward.z,
-        }
-        .normalize();
+        }.normalize();
+
         self.loc.x += s * x.x * m.x * dt;
         self.loc.z += s * x.z * m.x * dt;
 
         self.loc.x += s * self.right.x * m.z * dt;
-        self.loc.y += s * self.right.y * m.z * dt;
         self.loc.z += s * self.right.z * m.z * dt;
 
         self.loc.y += s * movement.y * dt;
