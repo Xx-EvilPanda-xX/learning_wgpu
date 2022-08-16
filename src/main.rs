@@ -17,7 +17,8 @@ fn run_app() {
     env_logger::init();
     let event_loop = EventLoop::new();
     let window = WindowBuilder::new()
-        .with_inner_size(winit::dpi::PhysicalSize::new(1280, 720))
+        .with_inner_size(winit::dpi::PhysicalSize::new(1600, 900))
+        .with_position(winit::dpi::PhysicalPosition::new(100, 50))
         .with_title("learning_wgpu")
         .build(&event_loop)
         .unwrap();

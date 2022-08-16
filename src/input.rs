@@ -9,6 +9,8 @@ pub struct InputState {
     pub left_pressed: bool,
     pub right_pressed: bool,
     pub tab_pressed: bool,
+    pub up_pressed: bool,
+    pub down_pressed: bool,
     unhandled_mouse_move: (f64, f64),
 }
 
@@ -20,6 +22,8 @@ impl InputState {
     const LEFT: VirtualKeyCode = VirtualKeyCode::A;
     const RIGHT: VirtualKeyCode = VirtualKeyCode::D;
     const TAB: VirtualKeyCode = VirtualKeyCode::Tab;
+    const UP: VirtualKeyCode = VirtualKeyCode::Up;
+    const DOWN: VirtualKeyCode = VirtualKeyCode::Down;
 
     pub fn new() -> Self {
         InputState {
@@ -30,6 +34,8 @@ impl InputState {
             left_pressed: false,
             right_pressed: false,
             tab_pressed: false,
+            up_pressed: false,
+            down_pressed: false,
             unhandled_mouse_move: (0.0, 0.0),
         }
     }
@@ -92,6 +98,20 @@ impl InputState {
                                 false
                             }
                         }
+                        InputState::UP => {
+                            self.up_pressed = if let ElementState::Pressed = state {
+                                true
+                            } else {
+                                false
+                            }
+                        }
+                        InputState::DOWN => {
+                            self.down_pressed = if let ElementState::Pressed = state {
+                                true
+                            } else {
+                                false
+                            }
+                        }
                         _ => {}
                     }
                 }
@@ -112,22 +132,22 @@ impl InputState {
     pub fn get_movement(&self) -> Vector3<f32> {
         let mut movement = Vector3::new(0.0, 0.0, 0.0);
         if self.forward_pressed {
-            movement.x += 1.0;
+            movement.x += 1.5;
         }
         if self.backward_pressed {
-            movement.x -= 1.0;
+            movement.x -= 1.5;
         }
         if self.right_pressed {
-            movement.z += 1.0;
+            movement.z += 1.5;
         }
         if self.left_pressed {
-            movement.z -= 1.0;
+            movement.z -= 1.5;
         }
         if self.space_pressed {
-            movement.y += 1.0;
+            movement.y += 1.5;
         }
         if self.shift_pressed {
-            movement.y -= 1.0;
+            movement.y -= 1.5;
         }
         movement
     }
