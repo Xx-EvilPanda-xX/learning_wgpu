@@ -111,8 +111,7 @@ impl App {
             label: Some("global_bind_group_layout"),
         });
 
-        let render_pipeline =
-            graphics::build_pipeline(&[&bind_group_layout], &device, &shader, &config);
+        let render_pipeline = graphics::build_pipeline(&[&bind_group_layout], &device, &shader, &config);
 
         let camera = Camera::new(
             (0.5, 0.5, 1.0).into(),
@@ -219,7 +218,7 @@ impl App {
 
         let obj1_bind_group = graphics::build_bind_group(
             &bind_group_layout,
-            &std::fs::read("res/tex/bu.png").expect("Failed to load texture"),
+            &std::fs::read("res/tex/tex6.png").expect("Failed to load texture"),
             "texture_obj1",
             &device,
             &queue,
@@ -276,7 +275,7 @@ impl App {
 
         let obj2_bind_group = graphics::build_bind_group(
             &bind_group_layout,
-            &std::fs::read("res/tex/bu2.png").expect("Failed to load texture"),
+            &std::fs::read("res/tex/tex4.jpg").expect("Failed to load texture"),
             "texture_obj2",
             &device,
             &queue,
@@ -319,6 +318,7 @@ impl App {
             self.config.width = new_size.width;
             self.config.height = new_size.height;
             self.surface.configure(&self.device, &self.config);
+            self.depth_texture = graphics::create_depth_texture(&self.device, &self.config, "global_depth_texture")
         }
     }
 
@@ -402,8 +402,15 @@ impl App {
         if c.r < 0.0 { c.r = 0.0; }
         if c.g < 0.0 { c.g = 0.0; }
         if c.b < 0.0 { c.b = 0.0; }
-
-        self.camera.update_pos(self.input_state.get_movement(), self.delta_time as f32);
+        
+        let movement = self.input_state.get_movement();
+        
+        if movement != Vector3::new(0.0, 0.0, 0.0) {
+            self.camera.vel = movement;
+        }
+        
+        self.camera.vel *= 0.99;
+        self.camera.update_pos(self.delta_time as f32);
         self.camera.update_look((mouse_move.0 as f32, mouse_move.1 as f32));
         self.camera_uniform.update_view_proj(&self.camera);
         self.queue.write_buffer(
@@ -438,8 +445,6 @@ impl App {
                 mat: obj2_model.into(),
             }]),
         );
-
-        
     }
 
     pub fn render(&mut self) -> Result<(), wgpu::SurfaceError> {

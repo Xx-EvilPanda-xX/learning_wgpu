@@ -11,6 +11,7 @@ pub struct InputState {
     pub tab_pressed: bool,
     pub up_pressed: bool,
     pub down_pressed: bool,
+    pub ctrl_pressed: bool,
     unhandled_mouse_move: (f64, f64),
 }
 
@@ -24,6 +25,9 @@ impl InputState {
     const TAB: VirtualKeyCode = VirtualKeyCode::Tab;
     const UP: VirtualKeyCode = VirtualKeyCode::Up;
     const DOWN: VirtualKeyCode = VirtualKeyCode::Down;
+    const CTRL: VirtualKeyCode = VirtualKeyCode::LControl;
+
+    const SPRINT_SPEED: f32 = 2.0;
 
     pub fn new() -> Self {
         InputState {
@@ -36,6 +40,7 @@ impl InputState {
             tab_pressed: false,
             up_pressed: false,
             down_pressed: false,
+            ctrl_pressed: false,
             unhandled_mouse_move: (0.0, 0.0),
         }
     }
@@ -49,69 +54,16 @@ impl InputState {
             } => {
                 if let Some(key) = virtual_keycode {
                     match *key {
-                        InputState::SPACE => {
-                            self.space_pressed = if let ElementState::Pressed = state {
-                                true
-                            } else {
-                                false
-                            }
-                        }
-                        InputState::SHIFT => {
-                            self.shift_pressed = if let ElementState::Pressed = state {
-                                true
-                            } else {
-                                false
-                            }
-                        }
-                        InputState::FORWARD => {
-                            self.forward_pressed = if let ElementState::Pressed = state {
-                                true
-                            } else {
-                                false
-                            }
-                        }
-                        InputState::BACK => {
-                            self.backward_pressed = if let ElementState::Pressed = state {
-                                true
-                            } else {
-                                false
-                            }
-                        }
-                        InputState::LEFT => {
-                            self.left_pressed = if let ElementState::Pressed = state {
-                                true
-                            } else {
-                                false
-                            }
-                        }
-                        InputState::RIGHT => {
-                            self.right_pressed = if let ElementState::Pressed = state {
-                                true
-                            } else {
-                                false
-                            }
-                        }
-                        InputState::TAB => {
-                            self.tab_pressed = if let ElementState::Pressed = state {
-                                true
-                            } else {
-                                false
-                            }
-                        }
-                        InputState::UP => {
-                            self.up_pressed = if let ElementState::Pressed = state {
-                                true
-                            } else {
-                                false
-                            }
-                        }
-                        InputState::DOWN => {
-                            self.down_pressed = if let ElementState::Pressed = state {
-                                true
-                            } else {
-                                false
-                            }
-                        }
+                        Self::SPACE => self.space_pressed = if let ElementState::Pressed = state { true } else { false },
+                        Self::SHIFT => self.shift_pressed = if let ElementState::Pressed = state { true } else { false },
+                        Self::FORWARD => self.forward_pressed = if let ElementState::Pressed = state { true } else { false },
+                        Self::BACK => self.backward_pressed = if let ElementState::Pressed = state { true } else { false },
+                        Self::LEFT => self.left_pressed = if let ElementState::Pressed = state { true } else { false },
+                        Self::RIGHT => self.right_pressed = if let ElementState::Pressed = state { true } else { false },
+                        Self::TAB => self.tab_pressed = if let ElementState::Pressed = state { true } else { false },
+                        Self::UP => self.up_pressed = if let ElementState::Pressed = state { true } else { false },
+                        Self::DOWN => self.down_pressed = if let ElementState::Pressed = state { true } else { false },
+                        Self::CTRL => self.ctrl_pressed = if let ElementState::Pressed = state { true } else { false },
                         _ => {}
                     }
                 }
@@ -148,6 +100,9 @@ impl InputState {
         }
         if self.shift_pressed {
             movement.y -= 1.5;
+        }
+        if self.ctrl_pressed {
+            movement.x *= Self::SPRINT_SPEED;
         }
         movement
     }

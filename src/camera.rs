@@ -2,10 +2,11 @@ use cgmath::{InnerSpace, Point3, Vector3, Matrix4};
 
 #[derive(Debug)]
 pub struct Camera {
-    pub loc: cgmath::Point3<f32>,
-    forward: cgmath::Vector3<f32>,
-    up: cgmath::Vector3<f32>,
-    right: cgmath::Vector3<f32>,
+    pub loc: Point3<f32>,
+    pub vel: Vector3<f32>,
+    forward: Vector3<f32>,
+    up: Vector3<f32>,
+    right: Vector3<f32>,
     yaw: f32,
     pitch: f32,
     aspect: f32,
@@ -43,6 +44,7 @@ impl Camera {
     ) -> Self {
         let mut cam = Camera {
             loc,
+            vel: Vector3::new(0.0, 0.0, 0.0),
             forward: Vector3::new(0.0, 0.0, 0.0),
             up: Vector3::new(0.0, 0.0, 0.0),
             right: Vector3::new(0.0, 0.0, 0.0),
@@ -65,9 +67,9 @@ impl Camera {
         GL_TO_WGPU * proj * view
     }
 
-    pub fn update_pos(&mut self, movement: Vector3<f32>, dt: f32) {
+    pub fn update_pos(&mut self, dt: f32) {
         let s = &self.speed;
-        let m = &movement;
+        let m = &self.vel;
 
         let x = Vector3 {
             x: self.forward.x,
@@ -81,7 +83,7 @@ impl Camera {
         self.loc.x += s * self.right.x * m.z * dt;
         self.loc.z += s * self.right.z * m.z * dt;
 
-        self.loc.y += s * movement.y * dt;
+        self.loc.y += s * m.y * dt;
 
         self.calc_vecs();
     }

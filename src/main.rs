@@ -26,6 +26,7 @@ fn run_app() {
 
     let mut app = app::App::new(&window);
     let mut last_frame = std::time::Instant::now();
+    let mut is_focused = true;
 
     event_loop.run(move |event, _, control_flow| match event {
         Event::WindowEvent {
@@ -42,12 +43,15 @@ fn run_app() {
                     },
                 ..
             } => *control_flow = ControlFlow::Exit,
+            WindowEvent::Focused(focused) => is_focused = *focused,
             _ => {
                 app.input(Some(event), None, &window);
             }
         },
         Event::DeviceEvent { ref event, .. } => {
-            app.input(None, Some(event), &window);
+            if is_focused {
+                app.input(None, Some(event), &window);
+            }
         }
         Event::RedrawRequested(window_id) if window_id == window.id() => {
             app.update();
