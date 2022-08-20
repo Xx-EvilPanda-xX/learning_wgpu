@@ -218,7 +218,7 @@ impl App {
 
         let obj1_bind_group = graphics::build_bind_group(
             &bind_group_layout,
-            &std::fs::read("res/tex/tex6.png").expect("Failed to load texture"),
+            &std::fs::read("res/tex/tex4.jpg").expect("Failed to load texture"),
             "texture_obj1",
             &device,
             &queue,
@@ -275,7 +275,7 @@ impl App {
 
         let obj2_bind_group = graphics::build_bind_group(
             &bind_group_layout,
-            &std::fs::read("res/tex/tex4.jpg").expect("Failed to load texture"),
+            &std::fs::read("res/tex/tex6.png").expect("Failed to load texture"),
             "texture_obj2",
             &device,
             &queue,
@@ -403,21 +403,30 @@ impl App {
         if c.g < 0.0 { c.g = 0.0; }
         if c.b < 0.0 { c.b = 0.0; }
         
-        let movement = self.input_state.get_movement();
+        let m = self.input_state.get_movement();
+        let v = &mut self.camera.vel;
+        let dec = 1.0 - self.delta_time as f32 * 10.0;
         
-        if movement != Vector3::new(0.0, 0.0, 0.0) {
-            self.camera.vel = movement;
+        if m.x != 0.0 {
+            v.x = m.x;
+        } else {
+            v.x *= dec;
         }
-        
-        self.camera.vel *= 0.99;
+        if m.y != 0.0 {
+            v.y = m.y;
+        } else {
+            v.y *= dec;
+        }
+        if m.z != 0.0 {
+            v.z = m.z;
+        } else {
+            v.z *= dec;
+        }
+
         self.camera.update_pos(self.delta_time as f32);
         self.camera.update_look((mouse_move.0 as f32, mouse_move.1 as f32));
         self.camera_uniform.update_view_proj(&self.camera);
-        self.queue.write_buffer(
-            &self.camera_uniform_buffer,
-            0,
-            bytemuck::cast_slice(&[self.camera_uniform]),
-        );
+        self.queue.write_buffer(&self.camera_uniform_buffer, 0, bytemuck::cast_slice(&[self.camera_uniform]));
 
         let now = std::time::Instant::now().duration_since(self.intial_instant).as_secs_f32();
 

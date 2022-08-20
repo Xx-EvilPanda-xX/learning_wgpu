@@ -25,6 +25,7 @@ fn run_app() {
     window.set_cursor_visible(false);
 
     let mut app = app::App::new(&window);
+    println!("Size of application on stack: {}", std::mem::size_of::<app::App>());
     let mut last_frame = std::time::Instant::now();
     let mut is_focused = true;
 
@@ -43,7 +44,10 @@ fn run_app() {
                     },
                 ..
             } => *control_flow = ControlFlow::Exit,
-            WindowEvent::Focused(focused) => is_focused = *focused,
+            WindowEvent::Focused(focused) => {
+                is_focused = *focused;
+                window.set_cursor_visible(!is_focused);
+            }
             _ => {
                 app.input(Some(event), None, &window);
             }
