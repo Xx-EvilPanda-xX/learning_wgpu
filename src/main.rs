@@ -50,7 +50,7 @@ fn run_app() {
             }
             _ => {
                 app.input(Some(event), None, &window);
-            }
+            }   
         },
         Event::DeviceEvent { ref event, .. } => {
             if is_focused {

@@ -20,6 +20,7 @@ pub struct App {
 
     obj1: (RenderObject, wgpu::BindGroup),
     obj2: (RenderObject, wgpu::BindGroup),
+    floor: (RenderObject, wgpu::BindGroup),
 
     pub input_state: input::InputState,
 
@@ -40,9 +41,9 @@ struct RenderObject {
     indices: wgpu::Buffer,
     model_buf: wgpu::Buffer,
     num_indices: u32,
-    instances_buffer: wgpu::Buffer,
-    instances: Vec<Instance>,
-    shown_instances: u32,
+    instances_buffer: Option<wgpu::Buffer>,
+    instances: Option<Vec<Instance>>,
+    shown_instances: Option<u32>,
 }
 
 #[derive(Clone)]
@@ -64,6 +65,7 @@ impl Instance {
 const INSTANCED_ROWS: usize = 50;
 const INSTANCED_COLS: usize = 50;
 const INSTANCE_SPACING: f32 = 3.0;
+const FLOOR_Y: f32 = -15.0;
 
 impl App {
     pub fn new(window: &winit::window::Window) -> Self {
@@ -205,15 +207,15 @@ impl App {
                 usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             }),
             num_indices: 36,
-            instances_buffer: device.create_buffer_init(
+            instances_buffer: Some(device.create_buffer_init(
                 &wgpu::util::BufferInitDescriptor {
                     label: Some("obj1_instance_buffer"),
                     contents: bytemuck::cast_slice(&instances.iter().map(Instance::as_raw).collect::<Vec<_>>()),
                     usage: wgpu::BufferUsages::VERTEX,
                 }
-            ),
-            instances: instances.clone(),
-            shown_instances: (INSTANCED_ROWS * INSTANCED_COLS) as u32,
+            )),
+            instances: Some(instances.clone()),
+            shown_instances: Some((INSTANCED_ROWS * INSTANCED_COLS) as u32),
         };
 
         let obj1_bind_group = graphics::build_bind_group(
@@ -262,15 +264,15 @@ impl App {
                 usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             }),
             num_indices: 18,
-            instances_buffer: device.create_buffer_init(
+            instances_buffer: Some(device.create_buffer_init(
                 &wgpu::util::BufferInitDescriptor {
                     label: Some("obj2_instance_buffer"),
                     contents: bytemuck::cast_slice(&instances.iter().map(Instance::as_raw).collect::<Vec<_>>()),
                     usage: wgpu::BufferUsages::VERTEX,
                 }
-            ),
-            instances: instances.clone(),
-            shown_instances: (INSTANCED_ROWS * INSTANCED_COLS) as u32,
+            )),
+            instances: Some(instances.clone()),
+            shown_instances: Some((INSTANCED_ROWS * INSTANCED_COLS) as u32),
         };
 
         let obj2_bind_group = graphics::build_bind_group(
@@ -280,6 +282,49 @@ impl App {
             &device,
             &queue,
             vec![&camera_uniform_buffer, &obj2.model_buf],
+        );
+
+        let floor = RenderObject {
+            vertices: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("vertices_floor"),
+                contents: bytemuck::cast_slice(&[
+                    graphics::Vertex { position: [0.0, FLOOR_Y, 0.0], tex_coords: [0.0, 0.0] },
+                    graphics::Vertex { position: [0.0, FLOOR_Y, INSTANCED_COLS as f32 * INSTANCE_SPACING], tex_coords: [0.0, 5.0] },
+                    graphics::Vertex { position: [INSTANCED_ROWS as f32 * INSTANCE_SPACING, FLOOR_Y, 0.0], tex_coords: [5.0, 0.0] },
+                    graphics::Vertex { position: [INSTANCED_ROWS as f32 * INSTANCE_SPACING, FLOOR_Y, INSTANCED_COLS as f32 * INSTANCE_SPACING], tex_coords: [5.0, 5.0] },
+                ]),
+                usage: wgpu::BufferUsages::VERTEX,
+            }),
+            indices: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("indices_floor"),
+                contents: bytemuck::cast_slice(&[
+                    0u16, 1, 2,
+                    1, 3, 2,
+                    1, 0, 2,
+                    3, 1, 2,
+                ]),
+                usage: wgpu::BufferUsages::INDEX,
+            }),
+            model_buf: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("model_floor"),
+                contents: bytemuck::cast_slice(&[super::graphics::RawMatrix {
+                    mat: Matrix4::identity().into(),
+                }]),
+                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            }),
+            num_indices: 12,
+            instances_buffer: None,
+            instances: None,
+            shown_instances: None,
+        };
+
+        let floor_bind_group = graphics::build_bind_group(
+            &bind_group_layout,
+            &std::fs::read("res/tex/floor.png").expect("Failed to load texture"),
+            "texture_floor",
+            &device,
+            &queue,
+            vec![&camera_uniform_buffer, &floor.model_buf],
         );
 
         let depth_texture =
@@ -300,11 +345,12 @@ impl App {
             render_pipeline,
             obj1: (obj1, obj1_bind_group),
             obj2: (obj2, obj2_bind_group),
+            floor: (floor, floor_bind_group),
             input_state: input::InputState::new(),
             camera,
             camera_uniform,
             camera_uniform_buffer,
-            selected_obj: 0,
+            selected_obj: 1,
             cooldowns: (0.0, 0.0),
             delta_time: 0.0,
             depth_texture,
@@ -369,18 +415,22 @@ impl App {
         }
 
         if self.input_state.up_pressed && self.cooldowns.1 <= 0.75 {
+            let shown_instances1 = self.obj1.0.shown_instances.as_mut().unwrap();
+            let shown_instances2 = self.obj2.0.shown_instances.as_mut().unwrap();
             match self.selected_obj {
-                0 if self.obj1.0.shown_instances < self.obj1.0.instances.len() as u32 => self.obj1.0.shown_instances += 1,
-                1 if self.obj2.0.shown_instances < self.obj2.0.instances.len() as u32 => self.obj2.0.shown_instances += 1,
+                0 if *shown_instances1 < self.obj1.0.instances.as_ref().unwrap().len() as u32 => *shown_instances1 += 1,
+                1 if *shown_instances2 < self.obj2.0.instances.as_ref().unwrap().len() as u32 => *shown_instances2 += 1,
                 _ => {},
             }
             self.cooldowns.1 = 1.0;
         }
 
         if self.input_state.down_pressed && self.cooldowns.1 <= 0.75 {
+            let shown_instances1 = self.obj1.0.shown_instances.as_mut().unwrap();
+            let shown_instances2 = self.obj2.0.shown_instances.as_mut().unwrap();
             match self.selected_obj {
-                0 if self.obj1.0.shown_instances > 0 as u32 => self.obj1.0.shown_instances -= 1,
-                1 if self.obj2.0.shown_instances > 0 as u32 => self.obj2.0.shown_instances -= 1,
+                0 if *shown_instances1 > 0 => *shown_instances1 -= 1,
+                1 if *shown_instances2 > 0 => *shown_instances2 -= 1,
                 _ => {},
             }
             self.cooldowns.1 = 1.0;
@@ -429,6 +479,8 @@ impl App {
         self.queue.write_buffer(&self.camera_uniform_buffer, 0, bytemuck::cast_slice(&[self.camera_uniform]));
 
         let now = std::time::Instant::now().duration_since(self.intial_instant).as_secs_f32();
+        let sin = now.sin();
+        let cos = now.cos();
 
         let obj1_model = 
               Matrix4::from_angle_x(cgmath::Rad { 0: now })
@@ -436,8 +488,8 @@ impl App {
             * Matrix4::from_angle_z(cgmath::Rad { 0: now });
 
         let obj2_model = 
-              Matrix4::from_translation(Vector3::new(0.0, now.sin(), 0.0))
-            * Matrix4::from_scale(now.cos().abs() + 1.22);
+              Matrix4::from_translation(Vector3::new(sin * 10.0, sin, cos * 10.0))
+            * Matrix4::from_scale(sin.abs() + 1.22);
 
         self.queue.write_buffer(
             &self.obj1.0.model_buf,
@@ -491,6 +543,7 @@ impl App {
                 1 => App::render_obj(&mut render_pass, &self.obj2),
                 _ => {}
             }
+            App::render_obj(&mut render_pass, &self.floor);
         }
 
         self.queue.submit(std::iter::once(encoder.finish()));
@@ -504,8 +557,10 @@ impl App {
     ) {
         render_pass.set_bind_group(0, &obj.1, &[]);
         render_pass.set_vertex_buffer(0, obj.0.vertices.slice(..));
-        render_pass.set_vertex_buffer(1, obj.0.instances_buffer.slice(..));
+        if let Some(ref buf) = obj.0.instances_buffer {
+            render_pass.set_vertex_buffer(1, buf.slice(..));
+        }
         render_pass.set_index_buffer(obj.0.indices.slice(..), wgpu::IndexFormat::Uint16);
-        render_pass.draw_indexed(0..obj.0.num_indices, 0, 0..obj.0.shown_instances);
+        render_pass.draw_indexed(0..obj.0.num_indices, 0, 0..obj.0.shown_instances.unwrap_or(1));
     }
 }
