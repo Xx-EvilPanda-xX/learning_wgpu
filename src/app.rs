@@ -1,5 +1,6 @@
 use crate::camera::Camera;
 use crate::graphics;
+use crate::graphics::Instance;
 use crate::graphics::RawMatrix;
 use crate::input;
 use cgmath::{Vector3, Matrix4, SquareMatrix, Rotation3};
@@ -46,22 +47,6 @@ struct RenderObject {
     shown_instances: Option<u32>,
 }
 
-#[derive(Clone)]
-struct Instance {
-    trans: cgmath::Vector3<f32>,
-    rot: cgmath::Quaternion<f32>,
-}
-
-impl Instance {
-    fn as_raw(&self) -> graphics::InstanceRaw {
-        graphics::InstanceRaw { 
-            model_mat: RawMatrix { 
-                mat: (cgmath::Matrix4::from_translation(self.trans) * cgmath::Matrix4::from(self.rot)).into()
-            }
-        }
-    }
-}
-
 const INSTANCED_ROWS: usize = 50;
 const INSTANCED_COLS: usize = 50;
 const INSTANCE_SPACING: f32 = 3.0;
@@ -70,54 +55,11 @@ const FLOOR_Y: f32 = -15.0;
 impl App {
     pub fn new(window: &winit::window::Window) -> Self {
         let (surface, device, queue, config, shader) = graphics::create_wgpu_context(window);
-
-        let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            entries: &[
-                wgpu::BindGroupLayoutEntry { // view/projection matrix uniform
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::VERTEX,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry { // model matrix uniform
-                    binding: 1,
-                    visibility: wgpu::ShaderStages::VERTEX,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry { // texture data
-                    binding: 2,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Texture {
-                        multisampled: false,
-                        view_dimension: wgpu::TextureViewDimension::D2,
-                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry { // texture sampler
-                    binding: 3,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                    count: None,
-                },
-            ],
-            label: Some("global_bind_group_layout"),
-        });
-
+        let bind_group_layout = build_bind_group_layout(&device);
         let render_pipeline = graphics::build_pipeline(&[&bind_group_layout], &device, &shader, &config);
-
         let camera = Camera::new(
             (0.5, 0.5, 1.0).into(),
-            270.0,
+            45.0,
             0.0,
             config.width as f32 / config.height as f32,
             90.0,
@@ -145,78 +87,9 @@ impl App {
             })
         }).collect::<Vec<_>>();
 
-        let obj1 = RenderObject {
-            vertices: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("vertices_obj1"),
-                contents: bytemuck::cast_slice(&[
-                    graphics::Vertex { position: [0.5, 0.5, 0.5], tex_coords: [1.0, 0.0], }, // 0
-                    graphics::Vertex { position: [-0.5, 0.5, 0.5], tex_coords: [0.0, 0.0], }, // 1
-                    graphics::Vertex { position: [0.5, -0.5, 0.5], tex_coords: [1.0, 1.0], }, // 2
-                    graphics::Vertex { position: [-0.5, -0.5, 0.5], tex_coords: [0.0, 1.0], }, // 3
-
-                    graphics::Vertex { position: [-0.5, 0.5, 0.5], tex_coords: [1.0, 0.0], }, // 4
-                    graphics::Vertex { position: [-0.5, 0.5, -0.5], tex_coords: [0.0, 0.0], }, // 5
-                    graphics::Vertex { position: [-0.5, -0.5, 0.5], tex_coords: [1.0, 1.0], }, // 6
-                    graphics::Vertex { position: [-0.5, -0.5, -0.5], tex_coords: [0.0, 1.0], }, // 7
-
-                    graphics::Vertex { position: [0.5, 0.5, 0.5], tex_coords: [1.0, 0.0], }, // 8
-                    graphics::Vertex { position: [0.5, 0.5, -0.5], tex_coords: [0.0, 0.0], }, // 9
-                    graphics::Vertex { position: [-0.5, 0.5, 0.5], tex_coords: [1.0, 1.0], }, // 10
-                    graphics::Vertex { position: [-0.5, 0.5, -0.5], tex_coords: [0.0, 1.0], }, // 11
-
-                    graphics::Vertex { position: [-0.5, 0.5, -0.5], tex_coords: [1.0, 0.0], }, // 12
-                    graphics::Vertex { position: [0.5, 0.5, -0.5], tex_coords: [0.0, 0.0], }, // 13
-                    graphics::Vertex { position: [-0.5, -0.5, -0.5], tex_coords: [1.0, 1.0], }, // 14
-                    graphics::Vertex { position: [0.5, -0.5, -0.5], tex_coords: [0.0, 1.0], }, // 15
-
-                    graphics::Vertex { position: [0.5, 0.5, -0.5], tex_coords: [1.0, 0.0], }, // 16
-                    graphics::Vertex { position: [0.5, 0.5, 0.5], tex_coords: [0.0, 0.0], }, // 17
-                    graphics::Vertex { position: [0.5, -0.5, -0.5], tex_coords: [1.0, 1.0], }, // 18
-                    graphics::Vertex { position: [0.5, -0.5, 0.5], tex_coords: [0.0, 1.0], }, // 19
-
-                    graphics::Vertex { position: [0.5, -0.5, 0.5], tex_coords: [1.0, 0.0], }, // 20
-                    graphics::Vertex { position: [-0.5, -0.5, 0.5], tex_coords: [0.0, 0.0], }, // 21
-                    graphics::Vertex { position: [0.5, -0.5, -0.5], tex_coords: [1.0, 1.0], }, // 22
-                    graphics::Vertex { position: [-0.5, -0.5, -0.5], tex_coords: [0.0, 1.0], }, // 23
-                ]),
-                usage: wgpu::BufferUsages::VERTEX,
-            }),
-            indices: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("indices_obj1"),
-                contents: bytemuck::cast_slice(&[
-                    0u16, 1, 2,
-                    1, 3, 2,
-                    4, 5, 6,
-                    5, 7, 6,
-                    8, 9, 10,
-                    9, 11, 10,
-                    12, 13, 14,
-                    13, 15, 14,
-                    16, 17, 18,
-                    17, 19, 18,
-                    20, 21, 22,
-                    21, 23, 22,
-                ]),
-                usage: wgpu::BufferUsages::INDEX,
-            }),
-            model_buf: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("model_obj1"),
-                contents: bytemuck::cast_slice(&[super::graphics::RawMatrix {
-                    mat: Matrix4::identity().into(),
-                }]),
-                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-            }),
-            num_indices: 36,
-            instances_buffer: Some(device.create_buffer_init(
-                &wgpu::util::BufferInitDescriptor {
-                    label: Some("obj1_instance_buffer"),
-                    contents: bytemuck::cast_slice(&instances.iter().map(Instance::as_raw).collect::<Vec<_>>()),
-                    usage: wgpu::BufferUsages::VERTEX,
-                }
-            )),
-            instances: Some(instances.clone()),
-            shown_instances: Some((INSTANCED_ROWS * INSTANCED_COLS) as u32),
-        };
+        let obj1 = build_obj1(&device, &instances);
+        let obj2 = build_obj2(&device, &instances);
+        let floor = build_floor(&device);
 
         let obj1_bind_group = graphics::build_bind_group(
             &bind_group_layout,
@@ -227,54 +100,6 @@ impl App {
             vec![&camera_uniform_buffer, &obj1.model_buf],
         );
 
-        let obj2 = RenderObject {
-            vertices: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("vertices_obj2"),
-                contents: bytemuck::cast_slice(&[
-                    graphics::Vertex { position: [0.0, 0.5, 0.0], tex_coords: [0.5, 0.0], }, // 0
-                    graphics::Vertex { position: [-0.5, -0.5, -0.5], tex_coords: [0.0, 1.0], }, // 1
-                    graphics::Vertex { position: [-0.5, -0.5, 0.5], tex_coords: [1.0, 1.0], }, // 2
-                    graphics::Vertex { position: [0.5, -0.5, 0.5], tex_coords: [0.0, 1.0], }, // 3
-                    graphics::Vertex { position: [0.5, -0.5, -0.5], tex_coords: [1.0, 1.0], }, // 4
-
-                    graphics::Vertex { position: [-0.5, -0.5, -0.5], tex_coords: [0.0, 1.0], }, // 5
-                    graphics::Vertex { position: [-0.5, -0.5, 0.5], tex_coords: [0.0, 0.0], }, // 6
-                    graphics::Vertex { position: [0.5, -0.5, 0.5], tex_coords: [1.0, 0.0], }, // 7
-                    graphics::Vertex { position: [0.5, -0.5, -0.5], tex_coords: [1.0, 1.0], }, // 8
-                ]),
-                usage: wgpu::BufferUsages::VERTEX,
-            }),
-            indices: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("indices_obj2"),
-                contents: bytemuck::cast_slice(&[
-                    0u16, 2, 3,
-                    0, 1, 2,
-                    0, 4, 1,
-                    0, 3, 4,
-                    7, 6, 8,
-                    6, 5, 8,
-                ]),
-                usage: wgpu::BufferUsages::INDEX,
-            }),
-            model_buf: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("model_obj2"),
-                contents: bytemuck::cast_slice(&[super::graphics::RawMatrix {
-                    mat: Matrix4::identity().into(),
-                }]),
-                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-            }),
-            num_indices: 18,
-            instances_buffer: Some(device.create_buffer_init(
-                &wgpu::util::BufferInitDescriptor {
-                    label: Some("obj2_instance_buffer"),
-                    contents: bytemuck::cast_slice(&instances.iter().map(Instance::as_raw).collect::<Vec<_>>()),
-                    usage: wgpu::BufferUsages::VERTEX,
-                }
-            )),
-            instances: Some(instances.clone()),
-            shown_instances: Some((INSTANCED_ROWS * INSTANCED_COLS) as u32),
-        };
-
         let obj2_bind_group = graphics::build_bind_group(
             &bind_group_layout,
             &std::fs::read("res/tex/tex6.png").expect("Failed to load texture"),
@@ -283,40 +108,6 @@ impl App {
             &queue,
             vec![&camera_uniform_buffer, &obj2.model_buf],
         );
-
-        let floor = RenderObject {
-            vertices: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("vertices_floor"),
-                contents: bytemuck::cast_slice(&[
-                    graphics::Vertex { position: [0.0, FLOOR_Y, 0.0], tex_coords: [0.0, 0.0] },
-                    graphics::Vertex { position: [0.0, FLOOR_Y, INSTANCED_COLS as f32 * INSTANCE_SPACING], tex_coords: [0.0, 5.0] },
-                    graphics::Vertex { position: [INSTANCED_ROWS as f32 * INSTANCE_SPACING, FLOOR_Y, 0.0], tex_coords: [5.0, 0.0] },
-                    graphics::Vertex { position: [INSTANCED_ROWS as f32 * INSTANCE_SPACING, FLOOR_Y, INSTANCED_COLS as f32 * INSTANCE_SPACING], tex_coords: [5.0, 5.0] },
-                ]),
-                usage: wgpu::BufferUsages::VERTEX,
-            }),
-            indices: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("indices_floor"),
-                contents: bytemuck::cast_slice(&[
-                    0u16, 1, 2,
-                    1, 3, 2,
-                    1, 0, 2,
-                    3, 1, 2,
-                ]),
-                usage: wgpu::BufferUsages::INDEX,
-            }),
-            model_buf: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("model_floor"),
-                contents: bytemuck::cast_slice(&[super::graphics::RawMatrix {
-                    mat: Matrix4::identity().into(),
-                }]),
-                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-            }),
-            num_indices: 12,
-            instances_buffer: None,
-            instances: None,
-            shown_instances: None,
-        };
 
         let floor_bind_group = graphics::build_bind_group(
             &bind_group_layout,
@@ -327,8 +118,7 @@ impl App {
             vec![&camera_uniform_buffer, &floor.model_buf],
         );
 
-        let depth_texture =
-            graphics::create_depth_texture(&device, &config, "global_depth_texture");
+        let depth_texture = graphics::create_depth_texture(&device, &config, "global_depth_texture");
 
         Self {
             surface,
@@ -562,5 +352,210 @@ impl App {
         }
         render_pass.set_index_buffer(obj.0.indices.slice(..), wgpu::IndexFormat::Uint16);
         render_pass.draw_indexed(0..obj.0.num_indices, 0, 0..obj.0.shown_instances.unwrap_or(1));
+    }
+}
+
+fn build_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
+    device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+        entries: &[
+            wgpu::BindGroupLayoutEntry { // view/projection matrix uniform
+                binding: 0,
+                visibility: wgpu::ShaderStages::VERTEX,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            },
+            wgpu::BindGroupLayoutEntry { // model matrix uniform
+                binding: 1,
+                visibility: wgpu::ShaderStages::VERTEX,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            },
+            wgpu::BindGroupLayoutEntry { // texture data
+                binding: 2,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Texture {
+                    multisampled: false,
+                    view_dimension: wgpu::TextureViewDimension::D2,
+                    sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                },
+                count: None,
+            },
+            wgpu::BindGroupLayoutEntry { // texture sampler
+                binding: 3,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                count: None,
+            },
+        ],
+        label: Some("global_bind_group_layout"),
+    })
+}
+
+fn build_obj1(device: &wgpu::Device, instances: &Vec<Instance>) -> RenderObject {
+    RenderObject {
+        vertices: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("vertices_obj1"),
+            contents: bytemuck::cast_slice(&[
+                graphics::Vertex { position: [0.5, 0.5, 0.5], tex_coords: [1.0, 0.0], }, // 0
+                graphics::Vertex { position: [-0.5, 0.5, 0.5], tex_coords: [0.0, 0.0], }, // 1
+                graphics::Vertex { position: [0.5, -0.5, 0.5], tex_coords: [1.0, 1.0], }, // 2
+                graphics::Vertex { position: [-0.5, -0.5, 0.5], tex_coords: [0.0, 1.0], }, // 3
+
+                graphics::Vertex { position: [-0.5, 0.5, 0.5], tex_coords: [1.0, 0.0], }, // 4
+                graphics::Vertex { position: [-0.5, 0.5, -0.5], tex_coords: [0.0, 0.0], }, // 5
+                graphics::Vertex { position: [-0.5, -0.5, 0.5], tex_coords: [1.0, 1.0], }, // 6
+                graphics::Vertex { position: [-0.5, -0.5, -0.5], tex_coords: [0.0, 1.0], }, // 7
+
+                graphics::Vertex { position: [0.5, 0.5, 0.5], tex_coords: [1.0, 0.0], }, // 8
+                graphics::Vertex { position: [0.5, 0.5, -0.5], tex_coords: [0.0, 0.0], }, // 9
+                graphics::Vertex { position: [-0.5, 0.5, 0.5], tex_coords: [1.0, 1.0], }, // 10
+                graphics::Vertex { position: [-0.5, 0.5, -0.5], tex_coords: [0.0, 1.0], }, // 11
+
+                graphics::Vertex { position: [-0.5, 0.5, -0.5], tex_coords: [1.0, 0.0], }, // 12
+                graphics::Vertex { position: [0.5, 0.5, -0.5], tex_coords: [0.0, 0.0], }, // 13
+                graphics::Vertex { position: [-0.5, -0.5, -0.5], tex_coords: [1.0, 1.0], }, // 14
+                graphics::Vertex { position: [0.5, -0.5, -0.5], tex_coords: [0.0, 1.0], }, // 15
+
+                graphics::Vertex { position: [0.5, 0.5, -0.5], tex_coords: [1.0, 0.0], }, // 16
+                graphics::Vertex { position: [0.5, 0.5, 0.5], tex_coords: [0.0, 0.0], }, // 17
+                graphics::Vertex { position: [0.5, -0.5, -0.5], tex_coords: [1.0, 1.0], }, // 18
+                graphics::Vertex { position: [0.5, -0.5, 0.5], tex_coords: [0.0, 1.0], }, // 19
+
+                graphics::Vertex { position: [0.5, -0.5, 0.5], tex_coords: [1.0, 0.0], }, // 20
+                graphics::Vertex { position: [-0.5, -0.5, 0.5], tex_coords: [0.0, 0.0], }, // 21
+                graphics::Vertex { position: [0.5, -0.5, -0.5], tex_coords: [1.0, 1.0], }, // 22
+                graphics::Vertex { position: [-0.5, -0.5, -0.5], tex_coords: [0.0, 1.0], }, // 23
+            ]),
+            usage: wgpu::BufferUsages::VERTEX,
+        }),
+        indices: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("indices_obj1"),
+            contents: bytemuck::cast_slice(&[
+                0u16, 1, 2,
+                1, 3, 2,
+                4, 5, 6,
+                5, 7, 6,
+                8, 9, 10,
+                9, 11, 10,
+                12, 13, 14,
+                13, 15, 14,
+                16, 17, 18,
+                17, 19, 18,
+                20, 21, 22,
+                21, 23, 22,
+            ]),
+            usage: wgpu::BufferUsages::INDEX,
+        }),
+        model_buf: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("model_obj1"),
+            contents: bytemuck::cast_slice(&[super::graphics::RawMatrix {
+                mat: Matrix4::identity().into(),
+            }]),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        }),
+        num_indices: 36,
+        instances_buffer: Some(device.create_buffer_init(
+            &wgpu::util::BufferInitDescriptor {
+                label: Some("obj1_instance_buffer"),
+                contents: bytemuck::cast_slice(&instances.iter().map(Instance::as_raw).collect::<Vec<_>>()),
+                usage: wgpu::BufferUsages::VERTEX,
+            }
+        )),
+        instances: Some(instances.clone()),
+        shown_instances: Some((INSTANCED_ROWS * INSTANCED_COLS) as u32),
+    }
+}
+
+fn build_obj2(device: &wgpu::Device, instances: &Vec<Instance>) -> RenderObject {
+    RenderObject {
+        vertices: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("vertices_obj2"),
+            contents: bytemuck::cast_slice(&[
+                graphics::Vertex { position: [0.0, 0.5, 0.0], tex_coords: [0.5, 0.0], }, // 0
+                graphics::Vertex { position: [-0.5, -0.5, -0.5], tex_coords: [0.0, 1.0], }, // 1
+                graphics::Vertex { position: [-0.5, -0.5, 0.5], tex_coords: [1.0, 1.0], }, // 2
+                graphics::Vertex { position: [0.5, -0.5, 0.5], tex_coords: [0.0, 1.0], }, // 3
+                graphics::Vertex { position: [0.5, -0.5, -0.5], tex_coords: [1.0, 1.0], }, // 4
+
+                graphics::Vertex { position: [-0.5, -0.5, -0.5], tex_coords: [0.0, 1.0], }, // 5
+                graphics::Vertex { position: [-0.5, -0.5, 0.5], tex_coords: [0.0, 0.0], }, // 6
+                graphics::Vertex { position: [0.5, -0.5, 0.5], tex_coords: [1.0, 0.0], }, // 7
+                graphics::Vertex { position: [0.5, -0.5, -0.5], tex_coords: [1.0, 1.0], }, // 8
+            ]),
+            usage: wgpu::BufferUsages::VERTEX,
+        }),
+        indices: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("indices_obj2"),
+            contents: bytemuck::cast_slice(&[
+                0u16, 2, 3,
+                0, 1, 2,
+                0, 4, 1,
+                0, 3, 4,
+                7, 6, 8,
+                6, 5, 8,
+            ]),
+            usage: wgpu::BufferUsages::INDEX,
+        }),
+        model_buf: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("model_obj2"),
+            contents: bytemuck::cast_slice(&[super::graphics::RawMatrix {
+                mat: Matrix4::identity().into(),
+            }]),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        }),
+        num_indices: 18,
+        instances_buffer: Some(device.create_buffer_init(
+            &wgpu::util::BufferInitDescriptor {
+                label: Some("obj2_instance_buffer"),
+                contents: bytemuck::cast_slice(&instances.iter().map(Instance::as_raw).collect::<Vec<_>>()),
+                usage: wgpu::BufferUsages::VERTEX,
+            }
+        )),
+        instances: Some(instances.clone()),
+        shown_instances: Some((INSTANCED_ROWS * INSTANCED_COLS) as u32),
+    }
+}
+
+fn build_floor(device: &wgpu::Device) -> RenderObject {
+    RenderObject {
+        vertices: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("vertices_floor"),
+            contents: bytemuck::cast_slice(&[
+                graphics::Vertex { position: [0.0, FLOOR_Y, 0.0], tex_coords: [0.0, 0.0] },
+                graphics::Vertex { position: [0.0, FLOOR_Y, (INSTANCED_COLS - 1) as f32 * INSTANCE_SPACING], tex_coords: [0.0, 5.0] },
+                graphics::Vertex { position: [(INSTANCED_ROWS - 1) as f32 * INSTANCE_SPACING, FLOOR_Y, 0.0], tex_coords: [5.0, 0.0] },
+                graphics::Vertex { position: [(INSTANCED_ROWS - 1) as f32 * INSTANCE_SPACING, FLOOR_Y, (INSTANCED_COLS - 1) as f32 * INSTANCE_SPACING], tex_coords: [5.0, 5.0] },
+            ]),
+            usage: wgpu::BufferUsages::VERTEX,
+        }),
+        indices: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("indices_floor"),
+            contents: bytemuck::cast_slice(&[
+                0u16, 1, 2,
+                1, 3, 2,
+                1, 0, 2,
+                3, 1, 2,
+            ]),
+            usage: wgpu::BufferUsages::INDEX,
+        }),
+        model_buf: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("model_floor"),
+            contents: bytemuck::cast_slice(&[super::graphics::RawMatrix {
+                mat: Matrix4::identity().into(),
+            }]),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        }),
+        num_indices: 12,
+        instances_buffer: None,
+        instances: None,
+        shown_instances: None,
     }
 }

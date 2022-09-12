@@ -8,6 +8,12 @@ pub struct Vertex {
     pub tex_coords: [f32; 2],
 }
 
+#[derive(Clone)]
+pub struct Instance {
+    pub trans: cgmath::Vector3<f32>,
+    pub rot: cgmath::Quaternion<f32>,
+}
+
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct InstanceRaw {
@@ -38,6 +44,16 @@ impl Vertex {
                     format: wgpu::VertexFormat::Float32x2,
                 },
             ],
+        }
+    }
+}
+
+impl Instance {
+    pub fn as_raw(&self) -> InstanceRaw {
+        InstanceRaw { 
+            model_mat: RawMatrix { 
+                mat: (cgmath::Matrix4::from_translation(self.trans) * cgmath::Matrix4::from(self.rot)).into()
+            }
         }
     }
 }

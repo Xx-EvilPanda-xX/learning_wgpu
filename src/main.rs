@@ -3,6 +3,7 @@ use winit::{
     event_loop::{ControlFlow, EventLoop},
     window::WindowBuilder,
 };
+use log::warn;
 
 mod app;
 mod camera;
@@ -25,7 +26,7 @@ fn run_app() {
     window.set_cursor_visible(false);
 
     let mut app = app::App::new(&window);
-    println!("Size of application on stack: {}", std::mem::size_of::<app::App>());
+    warn!("Size of application on stack: {}", std::mem::size_of::<app::App>());
     let mut last_frame = std::time::Instant::now();
     let mut is_focused = true;
 
