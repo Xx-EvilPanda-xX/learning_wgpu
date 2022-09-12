@@ -238,7 +238,7 @@ pub fn build_bind_group(
         resource: wgpu::BindingResource::Sampler(&sampler),
     });
 
-    // println!("{:#?}", entries);
+    log::debug!("{:#?}", entries);
 
     let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
         layout: bind_group_layout,

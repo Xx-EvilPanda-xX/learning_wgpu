@@ -3,11 +3,11 @@ use winit::{
     event_loop::{ControlFlow, EventLoop},
     window::WindowBuilder,
 };
-use log::warn;
+use log::info;
 
 mod app;
 mod camera;
-pub mod graphics;
+mod graphics;
 mod input;
 
 fn main() {
@@ -17,19 +17,24 @@ fn main() {
 fn run_app() {
     env_logger::init();
     let event_loop = EventLoop::new();
+
+    info!("Initializing... Please wait.");
+
     let window = WindowBuilder::new()
         .with_inner_size(winit::dpi::PhysicalSize::new(1600, 900))
         .with_position(winit::dpi::PhysicalPosition::new(100, 50))
         .with_title("learning_wgpu")
+        .with_visible(false)
         .build(&event_loop)
         .unwrap();
-    window.set_cursor_visible(false);
 
+    info!("Size of application on stack: {}kb", &(std::mem::size_of::<app::App>() as f64 / 1024.0).to_string()[0..4]);
     let mut app = app::App::new(&window);
-    warn!("Size of application on stack: {}", std::mem::size_of::<app::App>());
     let mut last_frame = std::time::Instant::now();
     let mut is_focused = true;
+    info!("Done initializing.");
 
+    window.set_visible(true);
     event_loop.run(move |event, _, control_flow| match event {
         Event::WindowEvent {
             ref event,
