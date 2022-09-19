@@ -108,6 +108,10 @@ impl Camera {
         self.calc_vecs();
     }
 
+    pub fn set_aspect(&mut self, aspect: f32) {
+        self.aspect = aspect;
+    }
+
     fn calc_vecs(&mut self) {
         let forward = Vector3 {
             x: self.yaw.to_radians().cos() * self.pitch.to_radians().cos(),

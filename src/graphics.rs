@@ -120,7 +120,7 @@ pub fn create_wgpu_context(
         compatible_surface: Some(&surface),
         force_fallback_adapter: false,
     }))
-    .unwrap();
+    .expect("Failed to retrieve adapter");
 
     let (device, queue) = pollster::block_on(adapter.request_device(
         &wgpu::DeviceDescriptor {
@@ -130,7 +130,7 @@ pub fn create_wgpu_context(
         },
         None,
     ))
-    .unwrap();
+    .expect("Failed to retrieve device");
 
     let config = wgpu::SurfaceConfiguration {
         usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
@@ -238,8 +238,6 @@ pub fn build_bind_group(
         resource: wgpu::BindingResource::Sampler(&sampler),
     });
 
-    log::debug!("{:#?}", entries);
-
     let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
         layout: bind_group_layout,
         entries: &entries,
@@ -255,7 +253,7 @@ fn load_texture(
     data: &[u8],
     name: &str,
 ) -> (wgpu::TextureView, wgpu::Sampler, wgpu::Texture) {
-    let tex_img = image::load_from_memory(data).unwrap();
+    let tex_img = image::load_from_memory(data).expect("Failed to load image");
     let tex_rgba = tex_img.to_rgba8();
 
     use image::GenericImageView;

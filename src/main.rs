@@ -1,9 +1,9 @@
 use winit::{
     event::*,
     event_loop::{ControlFlow, EventLoop},
-    window::WindowBuilder,
+    window::{WindowBuilder, Fullscreen},
 };
-use log::info;
+use log::{info, debug};
 
 mod app;
 mod camera;
@@ -26,58 +26,92 @@ fn run_app() {
         .with_title("learning_wgpu")
         .with_visible(false)
         .build(&event_loop)
-        .unwrap();
+        .expect("Failed to build window");
 
     info!("Size of application on stack: {}kb", &(std::mem::size_of::<app::App>() as f64 / 1024.0).to_string()[0..4]);
     let mut app = app::App::new(&window);
     let mut last_frame = std::time::Instant::now();
-    let mut is_focused = true;
+    let mut is_focused = false;
     info!("Done initializing.");
 
     window.set_visible(true);
-    event_loop.run(move |event, _, control_flow| match event {
-        Event::WindowEvent {
-            ref event,
-            window_id,
-        } if window_id == window.id() => match event {
-            WindowEvent::CloseRequested
-            | WindowEvent::KeyboardInput {
-                input:
-                    KeyboardInput {
-                        state: ElementState::Pressed,
-                        virtual_keycode: Some(VirtualKeyCode::Escape),
-                        ..
-                    },
-                ..
-            } => *control_flow = ControlFlow::Exit,
-            WindowEvent::Focused(focused) => {
-                is_focused = *focused;
-                window.set_cursor_visible(!is_focused);
+    event_loop.run(move |event, window_target, control_flow| {
+        match event {
+            Event::WindowEvent {
+                ref event,
+                window_id,
+            } if window_id == window.id() => match event {
+                WindowEvent::CloseRequested => *control_flow = ControlFlow::Exit,
+                WindowEvent::KeyboardInput {
+                    input:
+                        KeyboardInput {
+                            state: ElementState::Pressed,
+                            virtual_keycode: Some(key),
+                            ..
+                        },
+                    ..
+                } => {
+                    match key {
+                        VirtualKeyCode::Escape => {
+                            if !is_focused {
+                                *control_flow = ControlFlow::Exit;
+                            } else {
+                                is_focused = false;
+                                window.set_cursor_visible(true);
+                            }
+                        }
+                        VirtualKeyCode::F11 => {
+                            window.set_fullscreen(
+                                if let None = window.fullscreen() {
+                                    Some(Fullscreen::Exclusive(
+                                        window_target
+                                            .primary_monitor()
+                                            .expect("Failed to get primary monitor")
+                                            .video_modes()
+                                            .next()
+                                            .expect("No fullscreen video modes available")
+                                    ))
+                                } else {
+                                    None
+                                }
+                            );
+                        }
+                        _ => app.input(Some(event), None, &window, is_focused)
+                    }
+                }
+                WindowEvent::MouseInput {
+                    state: ElementState::Pressed,
+                    button: MouseButton::Left,
+                    ..
+                } => {
+                    is_focused = true;
+                    window.set_cursor_visible(false);
+                }
+                WindowEvent::Focused(focused) => {
+                    is_focused = *focused;
+                    window.set_cursor_visible(!is_focused);
+                }
+                _ => app.input(Some(event), None, &window, is_focused)
+            },
+            Event::DeviceEvent { ref event, .. } => {
+                app.input(None, Some(event), &window, is_focused);
             }
-            _ => {
-                app.input(Some(event), None, &window);
-            }   
-        },
-        Event::DeviceEvent { ref event, .. } => {
-            if is_focused {
-                app.input(None, Some(event), &window);
+            Event::RedrawRequested(window_id) if window_id == window.id() => {
+                app.update();
+                match app.render() {
+                    Ok(_) => {}
+                    Err(wgpu::SurfaceError::Lost) => app.resize(app.size),
+                    Err(wgpu::SurfaceError::OutOfMemory) => *control_flow = ControlFlow::Exit,
+                    Err(e) => debug!("SurfaceError: {:?}", e),
+                }
             }
-        }
-        Event::RedrawRequested(window_id) if window_id == window.id() => {
-            app.update();
-            match app.render() {
-                Ok(_) => {}
-                Err(wgpu::SurfaceError::Lost) => app.resize(app.size),
-                Err(wgpu::SurfaceError::OutOfMemory) => *control_flow = ControlFlow::Exit,
-                Err(e) => eprintln!("{:?}", e),
+            Event::MainEventsCleared => {
+                let now = std::time::Instant::now();
+                app.delta_time = now.duration_since(last_frame).as_secs_f64();
+                last_frame = now;
+                window.request_redraw();
             }
+            _ => {}
         }
-        Event::MainEventsCleared => {
-            let now = std::time::Instant::now();
-            app.delta_time = now.duration_since(last_frame).as_secs_f64();
-            last_frame = now;
-            window.request_redraw();
-        }
-        _ => {}
     });
 }

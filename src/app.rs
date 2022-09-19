@@ -154,7 +154,8 @@ impl App {
             self.config.width = new_size.width;
             self.config.height = new_size.height;
             self.surface.configure(&self.device, &self.config);
-            self.depth_texture = graphics::create_depth_texture(&self.device, &self.config, "global_depth_texture")
+            self.depth_texture = graphics::create_depth_texture(&self.device, &self.config, "global_depth_texture");
+            self.camera.set_aspect(self.config.width as f32 / self.config.height as f32);
         }
     }
 
@@ -163,10 +164,11 @@ impl App {
         window_event: Option<&WindowEvent>,
         device_event: Option<&DeviceEvent>,
         window: &Window,
+        focused: bool
     ) {
         if let Some(event) = window_event {
             match event {
-                WindowEvent::KeyboardInput { input, .. } => {
+                WindowEvent::KeyboardInput { input, .. } if focused => {
                     self.input_state.update_keyboard(input);
                 }
                 WindowEvent::Resized(new_size) => {
@@ -180,7 +182,7 @@ impl App {
         }
         if let Some(event) = device_event {
             match event {
-                DeviceEvent::MouseMotion { delta } => {
+                DeviceEvent::MouseMotion { delta } if focused => {
                     self.input_state.update_mouse(delta);
                     window
                         .set_cursor_position(PhysicalPosition::new(
@@ -204,26 +206,33 @@ impl App {
             self.cooldowns.0 = 1.0;
         }
 
-        if self.input_state.up_pressed && self.cooldowns.1 <= 0.75 {
-            let shown_instances1 = self.obj1.0.shown_instances.as_mut().unwrap();
-            let shown_instances2 = self.obj2.0.shown_instances.as_mut().unwrap();
-            match self.selected_obj {
-                0 if *shown_instances1 < self.obj1.0.instances.as_ref().unwrap().len() as u32 => *shown_instances1 += 1,
-                1 if *shown_instances2 < self.obj2.0.instances.as_ref().unwrap().len() as u32 => *shown_instances2 += 1,
-                _ => {},
+        if let (Some(shown_instances1),
+                Some(shown_instances2),
+                Some(instances1),
+                Some(instances2),)
+        = (
+            &mut self.obj1.0.shown_instances,
+            &mut self.obj2.0.shown_instances,
+            &self.obj1.0.instances,
+            &self.obj2.0.instances,
+        ) {
+            if self.input_state.up_pressed && self.cooldowns.1 <= 0.75 {
+                match self.selected_obj {
+                    0 if *shown_instances1 < instances1.len() as u32 => *shown_instances1 += 1,
+                    1 if *shown_instances2 < instances2.len() as u32 => *shown_instances2 += 1,
+                    _ => {},
+                }
+                self.cooldowns.1 = 1.0;
             }
-            self.cooldowns.1 = 1.0;
-        }
 
-        if self.input_state.down_pressed && self.cooldowns.1 <= 0.75 {
-            let shown_instances1 = self.obj1.0.shown_instances.as_mut().unwrap();
-            let shown_instances2 = self.obj2.0.shown_instances.as_mut().unwrap();
-            match self.selected_obj {
-                0 if *shown_instances1 > 0 => *shown_instances1 -= 1,
-                1 if *shown_instances2 > 0 => *shown_instances2 -= 1,
-                _ => {},
+            if self.input_state.down_pressed && self.cooldowns.1 <= 0.75 {
+                match self.selected_obj {
+                    0 if *shown_instances1 > 0 => *shown_instances1 -= 1,
+                    1 if *shown_instances2 > 0 => *shown_instances2 -= 1,
+                    _ => {},
+                }
+                self.cooldowns.1 = 1.0;
             }
-            self.cooldowns.1 = 1.0;
         }
 
         self.cooldowns.0 -= self.delta_time * 5.0;
