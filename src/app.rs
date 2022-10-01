@@ -4,6 +4,7 @@ use crate::graphics::Instance;
 use crate::graphics::RawMatrix;
 use crate::input;
 use cgmath::{Vector3, Matrix4, SquareMatrix, Rotation3};
+use log::debug;
 use wgpu::util::DeviceExt;
 use winit::dpi::PhysicalPosition;
 use winit::event::DeviceEvent;
@@ -21,6 +22,7 @@ pub struct App {
 
     obj1: (RenderObject, wgpu::BindGroup),
     obj2: (RenderObject, wgpu::BindGroup),
+    sphere: (RenderObject, wgpu::BindGroup),
     floor: (RenderObject, wgpu::BindGroup),
 
     pub input_state: input::InputState,
@@ -50,7 +52,10 @@ struct RenderObject {
 const INSTANCED_ROWS: usize = 50;
 const INSTANCED_COLS: usize = 50;
 const INSTANCE_SPACING: f32 = 3.0;
-const FLOOR_Y: f32 = -15.0;
+const SPHERE_INSTANCED_ROWS: usize = 10;
+const SPHERE_INSTANCED_COLS: usize = 10;
+const SPHERE_INSTANCE_SPACING: f32 = 15.0;
+const FLOOR_Y: f32 = -25.0;
 
 impl App {
     pub fn new(window: &winit::window::Window) -> Self {
@@ -58,14 +63,14 @@ impl App {
         let bind_group_layout = build_bind_group_layout(&device);
         let render_pipeline = graphics::build_pipeline(&[&bind_group_layout], &device, &shader, &config);
         let camera = Camera::new(
-            (0.5, 0.5, 1.0).into(),
+            (0.0, 0.0, 0.0).into(),
             45.0,
             0.0,
             config.width as f32 / config.height as f32,
             90.0,
             0.1,
             1000.0,
-            0.05,
+            20.0,
             5.0,
         );
 
@@ -78,7 +83,7 @@ impl App {
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
 
-        let instances = (0..INSTANCED_ROWS).flat_map(|x| {
+        let rot_instances = (0..INSTANCED_ROWS).flat_map(|x| {
             (0..INSTANCED_COLS).map(move |z| {
                 Instance { 
                     trans: Vector3::new(x as f32 * INSTANCE_SPACING, 0.0, z as f32 * INSTANCE_SPACING),
@@ -87,9 +92,19 @@ impl App {
             })
         }).collect::<Vec<_>>();
 
-        let obj1 = build_obj1(&device, &instances);
-        let obj2 = build_obj2(&device, &instances);
+        let static_instances = (0..SPHERE_INSTANCED_ROWS).flat_map(|x| {
+            (0..SPHERE_INSTANCED_COLS).map(move |z| {
+                Instance { 
+                    trans: Vector3::new(x as f32 * SPHERE_INSTANCE_SPACING, 0.0, z as f32 * SPHERE_INSTANCE_SPACING),
+                    rot: cgmath::Quaternion::from_axis_angle(cgmath::Vector3::unit_z(), cgmath::Deg(0.0))
+                }
+            })
+        }).collect::<Vec<_>>();
+
+        let obj1 = build_obj1(&device, &rot_instances);
+        let obj2 = build_obj2(&device, &rot_instances);
         let floor = build_floor(&device);
+        let sphere = build_sphere(&device, &static_instances);
 
         let obj1_bind_group = graphics::build_bind_group(
             &bind_group_layout,
@@ -118,6 +133,15 @@ impl App {
             vec![&camera_uniform_buffer, &floor.model_buf],
         );
 
+        let sphere_bind_group = graphics::build_bind_group(
+            &bind_group_layout,
+            &std::fs::read("res/tex/tex4.jpg").expect("Failed to load texture"),
+            "texture_sphere",
+            &device,
+            &queue,
+            vec![&camera_uniform_buffer, &sphere.model_buf],
+        );
+
         let depth_texture = graphics::create_depth_texture(&device, &config, "global_depth_texture");
 
         Self {
@@ -136,6 +160,7 @@ impl App {
             obj1: (obj1, obj1_bind_group),
             obj2: (obj2, obj2_bind_group),
             floor: (floor, floor_bind_group),
+            sphere: (sphere, sphere_bind_group),
             input_state: input::InputState::new(),
             camera,
             camera_uniform,
@@ -273,7 +298,7 @@ impl App {
         }
 
         self.camera.update_pos(self.delta_time as f32);
-        self.camera.update_look((mouse_move.0 as f32, mouse_move.1 as f32));
+        self.camera.update_look((mouse_move.0 as f32, mouse_move.1 as f32), self.delta_time as f32);
         self.camera_uniform.update_view_proj(&self.camera);
         self.queue.write_buffer(&self.camera_uniform_buffer, 0, bytemuck::cast_slice(&[self.camera_uniform]));
 
@@ -290,6 +315,10 @@ impl App {
               Matrix4::from_translation(Vector3::new(sin * 10.0, sin, cos * 10.0))
             * Matrix4::from_scale(sin.abs() + 1.22);
 
+        let sphere_model = 
+              Matrix4::from_angle_y(cgmath::Rad { 0: now })
+            * Matrix4::from_translation(Vector3::new(0.0, FLOOR_Y + 5.0, 0.0));
+
         self.queue.write_buffer(
             &self.obj1.0.model_buf,
             0,
@@ -305,6 +334,18 @@ impl App {
                 mat: obj2_model.into(),
             }]),
         );
+
+        self.queue.write_buffer(
+            &self.sphere.0.model_buf,
+            0,
+            bytemuck::cast_slice(&[super::graphics::RawMatrix {
+                mat: sphere_model.into(),
+            }]),
+        );
+
+        if self.input_state.f_pressed {
+            debug!("Player location: {:?}", self.camera.loc);
+        }
     }
 
     pub fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
@@ -342,6 +383,7 @@ impl App {
                 1 => App::render_obj(&mut render_pass, &self.obj2),
                 _ => {}
             }
+            App::render_obj(&mut render_pass, &self.sphere);
             App::render_obj(&mut render_pass, &self.floor);
         }
 
@@ -359,7 +401,7 @@ impl App {
         if let Some(ref buf) = obj.0.instances_buffer {
             render_pass.set_vertex_buffer(1, buf.slice(..));
         }
-        render_pass.set_index_buffer(obj.0.indices.slice(..), wgpu::IndexFormat::Uint16);
+        render_pass.set_index_buffer(obj.0.indices.slice(..), wgpu::IndexFormat::Uint32);
         render_pass.draw_indexed(0..obj.0.num_indices, 0, 0..obj.0.shown_instances.unwrap_or(1));
     }
 }
@@ -448,7 +490,7 @@ fn build_obj1(device: &wgpu::Device, instances: &Vec<Instance>) -> RenderObject 
         indices: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("indices_obj1"),
             contents: bytemuck::cast_slice(&[
-                0u16, 1, 2,
+                0u32, 1, 2,
                 1, 3, 2,
                 4, 5, 6,
                 5, 7, 6,
@@ -504,7 +546,7 @@ fn build_obj2(device: &wgpu::Device, instances: &Vec<Instance>) -> RenderObject 
         indices: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("indices_obj2"),
             contents: bytemuck::cast_slice(&[
-                0u16, 2, 3,
+                0u32, 2, 3,
                 0, 1, 2,
                 0, 4, 1,
                 0, 3, 4,
@@ -548,7 +590,7 @@ fn build_floor(device: &wgpu::Device) -> RenderObject {
         indices: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("indices_floor"),
             contents: bytemuck::cast_slice(&[
-                0u16, 1, 2,
+                0u32, 1, 2,
                 1, 3, 2,
                 1, 0, 2,
                 3, 1, 2,
@@ -567,4 +609,97 @@ fn build_floor(device: &wgpu::Device) -> RenderObject {
         instances: None,
         shown_instances: None,
     }
+}
+
+fn build_sphere(device: &wgpu::Device, instances: &Vec<Instance>) -> RenderObject {
+    let (vertices, indices) = sphere_data(5.0, 30);
+
+    RenderObject {
+        vertices: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("vertices_sphere"),
+            contents: bytemuck::cast_slice(&vertices),
+            usage: wgpu::BufferUsages::VERTEX,
+        }),
+        indices: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("indices_sphere"),
+            contents: bytemuck::cast_slice(&indices),
+            usage: wgpu::BufferUsages::INDEX,
+        }),
+        model_buf: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("model_sphere"),
+            contents: bytemuck::cast_slice(&[super::graphics::RawMatrix {
+                mat: Matrix4::identity().into(),
+            }]),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        }),
+        num_indices: indices.len() as u32,
+        instances_buffer: Some(device.create_buffer_init(
+            &wgpu::util::BufferInitDescriptor {
+                label: Some("sphere_instance_buffer"),
+                contents: bytemuck::cast_slice(&instances.iter().map(Instance::as_raw).collect::<Vec<_>>()),
+                usage: wgpu::BufferUsages::VERTEX,
+            }
+        )),
+        instances: Some(instances.clone()),
+        shown_instances: Some((SPHERE_INSTANCED_ROWS * SPHERE_INSTANCED_COLS) as u32),
+    }
+}
+
+fn sphere_data(radius: f64, detail: u32) -> (Vec<graphics::Vertex>, Vec<u32>) {
+    let mut vertices = Vec::new();
+    let factor = radius / detail as f64;
+    let mut verts_per_band = 0;
+    let mut bands = 0;
+
+    let mut y = -radius;
+    for _ in 0..=(detail * 2) {
+        verts_per_band = 0;
+        let band_radius = (radius * radius - y * y).sqrt();
+        let band_factor = band_radius / detail as f64;
+
+        let mut x = -band_radius;
+        for _ in 0..=(detail * 2) {
+            let z = (band_radius * band_radius - x * x).max(0.0).sqrt();
+            let tex = [((x / radius) as f32).abs(), ((z / radius) as f32).abs()];
+            vertices.push(
+                graphics::Vertex {
+                    position: [x as f32, y as f32, z as f32], tex_coords: tex
+                }
+            );
+            vertices.push(
+                graphics::Vertex {
+                    position: [x as f32, y as f32, -z as f32], tex_coords: tex
+                }
+            );
+
+            x += band_factor;
+            verts_per_band += 2;
+        }
+
+        y += factor;
+        bands += 1;
+    }
+
+    let mut indices = Vec::new();
+    for i in 0..bands - 1 {
+        for j in 0..verts_per_band - 2 {
+            if j % 2 != 0 {
+                indices.push((i * verts_per_band) + j);
+                indices.push(((i + 1) * verts_per_band) + j);
+                indices.push(((i + 1) * verts_per_band) + j + 2);
+                indices.push((i * verts_per_band) + j);
+                indices.push(((i + 1) * verts_per_band) + j + 2);
+                indices.push((i * verts_per_band) + j + 2);
+            } else {
+                indices.push((i * verts_per_band) + j);
+                indices.push(((i + 1) * verts_per_band) + j + 2);
+                indices.push(((i + 1) * verts_per_band) + j);
+                indices.push((i * verts_per_band) + j);
+                indices.push((i * verts_per_band) + j + 2);
+                indices.push(((i + 1) * verts_per_band) + j + 2);
+            }
+        }
+    }
+
+    (vertices, indices)
 }

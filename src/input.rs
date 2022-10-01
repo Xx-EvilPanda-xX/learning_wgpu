@@ -12,6 +12,7 @@ pub struct InputState {
     pub up_pressed: bool,
     pub down_pressed: bool,
     pub ctrl_pressed: bool,
+    pub f_pressed: bool,
     unhandled_mouse_move: (f64, f64),
 }
 
@@ -26,6 +27,7 @@ impl InputState {
     const UP: VirtualKeyCode = VirtualKeyCode::Up;
     const DOWN: VirtualKeyCode = VirtualKeyCode::Down;
     const CTRL: VirtualKeyCode = VirtualKeyCode::LControl;
+    const F: VirtualKeyCode = VirtualKeyCode::F;
 
     const SPRINT_SPEED: f32 = 2.0;
 
@@ -41,6 +43,7 @@ impl InputState {
             up_pressed: false,
             down_pressed: false,
             ctrl_pressed: false,
+            f_pressed: false,
             unhandled_mouse_move: (0.0, 0.0),
         }
     }
@@ -64,6 +67,7 @@ impl InputState {
                         Self::UP => self.up_pressed = if let ElementState::Pressed = state { true } else { false },
                         Self::DOWN => self.down_pressed = if let ElementState::Pressed = state { true } else { false },
                         Self::CTRL => self.ctrl_pressed = if let ElementState::Pressed = state { true } else { false },
+                        Self::F => self.f_pressed = if let ElementState::Pressed = state { true } else { false },
                         _ => {}
                     }
                 }

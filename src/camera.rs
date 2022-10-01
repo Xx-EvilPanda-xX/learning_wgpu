@@ -88,9 +88,9 @@ impl Camera {
         self.calc_vecs();
     }
 
-    pub fn update_look(&mut self, look: (f32, f32)) {
-        self.yaw += self.sens * look.0;
-        self.pitch += self.sens * -look.1;
+    pub fn update_look(&mut self, look: (f32, f32), dt: f32) {
+        self.yaw += self.sens * look.0 * dt;
+        self.pitch += self.sens * -look.1 * dt;
 
         if self.yaw > 360.0 {
             self.yaw = 0.0;

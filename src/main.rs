@@ -10,6 +10,8 @@ mod camera;
 mod graphics;
 mod input;
 
+const EXCLUSIVE_FULLSCREEN: bool = false;
+
 fn main() {
     run_app();
 }
@@ -63,14 +65,18 @@ fn run_app() {
                         VirtualKeyCode::F11 => {
                             window.set_fullscreen(
                                 if let None = window.fullscreen() {
-                                    Some(Fullscreen::Exclusive(
-                                        window_target
-                                            .primary_monitor()
-                                            .expect("Failed to get primary monitor")
-                                            .video_modes()
-                                            .next()
-                                            .expect("No fullscreen video modes available")
-                                    ))
+                                    if EXCLUSIVE_FULLSCREEN {
+                                        Some(Fullscreen::Exclusive(
+                                            window_target
+                                                .primary_monitor()
+                                                .expect("Failed to get primary monitor")
+                                                .video_modes()
+                                                .next()
+                                                .expect("No fullscreen video modes available")
+                                        ))
+                                    } else {
+                                        Some(Fullscreen::Borderless(None))
+                                    }
                                 } else {
                                     None
                                 }
