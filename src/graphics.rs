@@ -182,7 +182,7 @@ pub fn build_pipeline(
             topology: wgpu::PrimitiveTopology::TriangleList,
             strip_index_format: None,
             front_face: wgpu::FrontFace::Ccw,
-            cull_mode: Some(wgpu::Face::Back),
+            cull_mode: None,
             polygon_mode: if WIREFRAME {
                 wgpu::PolygonMode::Line
             } else {

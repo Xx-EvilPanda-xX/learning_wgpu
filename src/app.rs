@@ -3,7 +3,7 @@ use crate::graphics;
 use crate::graphics::Instance;
 use crate::graphics::RawMatrix;
 use crate::input;
-use cgmath::{Vector3, Matrix4, SquareMatrix, Rotation3};
+use cgmath::{Matrix4, Rotation3, SquareMatrix, Vector3};
 use log::debug;
 use wgpu::util::DeviceExt;
 use winit::dpi::PhysicalPosition;
@@ -22,7 +22,8 @@ pub struct App {
 
     obj1: (RenderObject, wgpu::BindGroup),
     obj2: (RenderObject, wgpu::BindGroup),
-    sphere: (RenderObject, wgpu::BindGroup),
+    pythagoras_sphere: (RenderObject, wgpu::BindGroup),
+    sine_sphere: (RenderObject, wgpu::BindGroup),
     floor: (RenderObject, wgpu::BindGroup),
 
     pub input_state: input::InputState,
@@ -61,7 +62,8 @@ impl App {
     pub fn new(window: &winit::window::Window) -> Self {
         let (surface, device, queue, config, shader) = graphics::create_wgpu_context(window);
         let bind_group_layout = build_bind_group_layout(&device);
-        let render_pipeline = graphics::build_pipeline(&[&bind_group_layout], &device, &shader, &config);
+        let render_pipeline =
+            graphics::build_pipeline(&[&bind_group_layout], &device, &shader, &config);
         let camera = Camera::new(
             (0.0, 0.0, 0.0).into(),
             45.0,
@@ -83,28 +85,44 @@ impl App {
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
 
-        let rot_instances = (0..INSTANCED_ROWS).flat_map(|x| {
-            (0..INSTANCED_COLS).map(move |z| {
-                Instance { 
-                    trans: Vector3::new(x as f32 * INSTANCE_SPACING, 0.0, z as f32 * INSTANCE_SPACING),
-                    rot: cgmath::Quaternion::from_axis_angle(cgmath::Vector3::unit_z(), cgmath::Deg((x * 10) as f32 + (z * 10) as f32))
-                }
+        let rot_instances = (0..INSTANCED_ROWS)
+            .flat_map(|x| {
+                (0..INSTANCED_COLS).map(move |z| Instance {
+                    trans: Vector3::new(
+                        x as f32 * INSTANCE_SPACING,
+                        0.0,
+                        z as f32 * INSTANCE_SPACING,
+                    ),
+                    rot: cgmath::Quaternion::from_axis_angle(
+                        cgmath::Vector3::unit_z(),
+                        cgmath::Deg((x * 10) as f32 + (z * 10) as f32),
+                    ),
+                })
             })
-        }).collect::<Vec<_>>();
+            .collect::<Vec<_>>();
 
-        let static_instances = (0..SPHERE_INSTANCED_ROWS).flat_map(|x| {
-            (0..SPHERE_INSTANCED_COLS).map(move |z| {
-                Instance { 
-                    trans: Vector3::new(x as f32 * SPHERE_INSTANCE_SPACING, 0.0, z as f32 * SPHERE_INSTANCE_SPACING),
-                    rot: cgmath::Quaternion::from_axis_angle(cgmath::Vector3::unit_z(), cgmath::Deg(0.0))
-                }
+        let static_instances = (0..SPHERE_INSTANCED_ROWS)
+            .flat_map(|x| {
+                (0..SPHERE_INSTANCED_COLS).map(move |z| Instance {
+                    trans: Vector3::new(
+                        x as f32 * SPHERE_INSTANCE_SPACING,
+                        0.0,
+                        z as f32 * SPHERE_INSTANCE_SPACING,
+                    ),
+                    rot: cgmath::Quaternion::from_axis_angle(
+                        cgmath::Vector3::unit_z(),
+                        cgmath::Deg(0.0),
+                    ),
+                })
             })
-        }).collect::<Vec<_>>();
+            .collect::<Vec<_>>();
 
         let obj1 = build_obj1(&device, &rot_instances);
         let obj2 = build_obj2(&device, &rot_instances);
         let floor = build_floor(&device);
-        let sphere = build_sphere(&device, &static_instances);
+        let instances_split = static_instances.split_at(static_instances.len() / 2);
+        let pythagoras_sphere = build_sphere(&device, &Vec::from(instances_split.0), true);
+        let sine_sphere = build_sphere(&device, &Vec::from(instances_split.1), false);
 
         let obj1_bind_group = graphics::build_bind_group(
             &bind_group_layout,
@@ -133,16 +151,26 @@ impl App {
             vec![&camera_uniform_buffer, &floor.model_buf],
         );
 
-        let sphere_bind_group = graphics::build_bind_group(
+        let pythagoras_sphere_bind_group = graphics::build_bind_group(
             &bind_group_layout,
             &std::fs::read("res/tex/tex4.jpg").expect("Failed to load texture"),
             "texture_sphere",
             &device,
             &queue,
-            vec![&camera_uniform_buffer, &sphere.model_buf],
+            vec![&camera_uniform_buffer, &pythagoras_sphere.model_buf],
         );
 
-        let depth_texture = graphics::create_depth_texture(&device, &config, "global_depth_texture");
+        let sine_sphere_bind_group = graphics::build_bind_group(
+            &bind_group_layout,
+            &std::fs::read("res/tex/tex6.png").expect("Failed to load texture"),
+            "texture_sphere",
+            &device,
+            &queue,
+            vec![&camera_uniform_buffer, &sine_sphere.model_buf],
+        );
+
+        let depth_texture =
+            graphics::create_depth_texture(&device, &config, "global_depth_texture");
 
         Self {
             surface,
@@ -160,7 +188,8 @@ impl App {
             obj1: (obj1, obj1_bind_group),
             obj2: (obj2, obj2_bind_group),
             floor: (floor, floor_bind_group),
-            sphere: (sphere, sphere_bind_group),
+            pythagoras_sphere: (pythagoras_sphere, pythagoras_sphere_bind_group),
+            sine_sphere: (sine_sphere, sine_sphere_bind_group),
             input_state: input::InputState::new(),
             camera,
             camera_uniform,
@@ -179,8 +208,10 @@ impl App {
             self.config.width = new_size.width;
             self.config.height = new_size.height;
             self.surface.configure(&self.device, &self.config);
-            self.depth_texture = graphics::create_depth_texture(&self.device, &self.config, "global_depth_texture");
-            self.camera.set_aspect(self.config.width as f32 / self.config.height as f32);
+            self.depth_texture =
+                graphics::create_depth_texture(&self.device, &self.config, "global_depth_texture");
+            self.camera
+                .set_aspect(self.config.width as f32 / self.config.height as f32);
         }
     }
 
@@ -189,7 +220,7 @@ impl App {
         window_event: Option<&WindowEvent>,
         device_event: Option<&DeviceEvent>,
         window: &Window,
-        focused: bool
+        focused: bool,
     ) {
         if let Some(event) = window_event {
             match event {
@@ -231,11 +262,12 @@ impl App {
             self.cooldowns.0 = 1.0;
         }
 
-        if let (Some(shown_instances1),
-                Some(shown_instances2),
-                Some(instances1),
-                Some(instances2),)
-        = (
+        if let (
+            Some(shown_instances1),
+            Some(shown_instances2),
+            Some(instances1),
+            Some(instances2),
+        ) = (
             &mut self.obj1.0.shown_instances,
             &mut self.obj2.0.shown_instances,
             &self.obj1.0.instances,
@@ -245,7 +277,7 @@ impl App {
                 match self.selected_obj {
                     0 if *shown_instances1 < instances1.len() as u32 => *shown_instances1 += 1,
                     1 if *shown_instances2 < instances2.len() as u32 => *shown_instances2 += 1,
-                    _ => {},
+                    _ => {}
                 }
                 self.cooldowns.1 = 1.0;
             }
@@ -254,7 +286,7 @@ impl App {
                 match self.selected_obj {
                     0 if *shown_instances1 > 0 => *shown_instances1 -= 1,
                     1 if *shown_instances2 > 0 => *shown_instances2 -= 1,
-                    _ => {},
+                    _ => {}
                 }
                 self.cooldowns.1 = 1.0;
             }
@@ -276,11 +308,11 @@ impl App {
         if c.r < 0.0 { c.r = 0.0; }
         if c.g < 0.0 { c.g = 0.0; }
         if c.b < 0.0 { c.b = 0.0; }
-        
+
         let m = self.input_state.get_movement();
         let v = &mut self.camera.vel;
         let dec = 1.0 - self.delta_time as f32 * 10.0;
-        
+
         if m.x != 0.0 {
             v.x = m.x;
         } else {
@@ -298,26 +330,35 @@ impl App {
         }
 
         self.camera.update_pos(self.delta_time as f32);
-        self.camera.update_look((mouse_move.0 as f32, mouse_move.1 as f32), self.delta_time as f32);
+        self.camera.update_look(
+            (mouse_move.0 as f32, mouse_move.1 as f32),
+            self.delta_time as f32,
+        );
         self.camera_uniform.update_view_proj(&self.camera);
-        self.queue.write_buffer(&self.camera_uniform_buffer, 0, bytemuck::cast_slice(&[self.camera_uniform]));
+        self.queue.write_buffer(
+            &self.camera_uniform_buffer,
+            0,
+            bytemuck::cast_slice(&[self.camera_uniform]),
+        );
 
-        let now = std::time::Instant::now().duration_since(self.intial_instant).as_secs_f32();
+        let now = std::time::Instant::now()
+            .duration_since(self.intial_instant)
+            .as_secs_f32();
         let sin = now.sin();
         let cos = now.cos();
 
-        let obj1_model = 
-              Matrix4::from_angle_x(cgmath::Rad { 0: now })
+        let obj1_model = Matrix4::from_angle_x(cgmath::Rad { 0: now })
             * Matrix4::from_angle_y(cgmath::Rad { 0: now })
             * Matrix4::from_angle_z(cgmath::Rad { 0: now });
 
-        let obj2_model = 
-              Matrix4::from_translation(Vector3::new(sin * 10.0, sin, cos * 10.0))
+        let obj2_model = Matrix4::from_translation(Vector3::new(sin * 10.0, sin, cos * 10.0))
             * Matrix4::from_scale(sin.abs() + 1.22);
 
-        let sphere_model = 
-              Matrix4::from_angle_y(cgmath::Rad { 0: now })
-            * Matrix4::from_translation(Vector3::new(0.0, FLOOR_Y + 5.0, 0.0));
+        let pythagoras_sphere_model = Matrix4::from_translation(Vector3::new(0.0, FLOOR_Y + 5.0, 0.0))
+            * Matrix4::from_angle_y(cgmath::Rad { 0: now });
+
+        let sine_sphere_model = Matrix4::from_translation(Vector3::new(0.0, FLOOR_Y + 5.0, 0.0))
+            * Matrix4::from_angle_y(cgmath::Rad { 0: now });
 
         self.queue.write_buffer(
             &self.obj1.0.model_buf,
@@ -336,22 +377,36 @@ impl App {
         );
 
         self.queue.write_buffer(
-            &self.sphere.0.model_buf,
+            &self.pythagoras_sphere.0.model_buf,
             0,
             bytemuck::cast_slice(&[super::graphics::RawMatrix {
-                mat: sphere_model.into(),
+                mat: pythagoras_sphere_model.into(),
+            }]),
+        );
+
+        self.queue.write_buffer(
+            &self.sine_sphere.0.model_buf,
+            0,
+            bytemuck::cast_slice(&[super::graphics::RawMatrix {
+                mat: sine_sphere_model.into(),
             }]),
         );
 
         if self.input_state.f_pressed {
-            debug!("Player location: {:?}", self.camera.loc);
+            debug!(
+                "Player location: {}, {}, {}",
+                self.camera.loc.x, self.camera.loc.y, self.camera.loc.z
+            );
         }
     }
 
     pub fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
         let output = self.surface.get_current_texture()?;
-        let view = output.texture.create_view(&wgpu::TextureViewDescriptor::default());
-        let mut encoder = self.device
+        let view = output
+            .texture
+            .create_view(&wgpu::TextureViewDescriptor::default());
+        let mut encoder = self
+            .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("frame_encoder"),
             });
@@ -383,7 +438,8 @@ impl App {
                 1 => App::render_obj(&mut render_pass, &self.obj2),
                 _ => {}
             }
-            App::render_obj(&mut render_pass, &self.sphere);
+            App::render_obj(&mut render_pass, &self.pythagoras_sphere);
+            App::render_obj(&mut render_pass, &self.sine_sphere);
             App::render_obj(&mut render_pass, &self.floor);
         }
 
@@ -402,7 +458,11 @@ impl App {
             render_pass.set_vertex_buffer(1, buf.slice(..));
         }
         render_pass.set_index_buffer(obj.0.indices.slice(..), wgpu::IndexFormat::Uint32);
-        render_pass.draw_indexed(0..obj.0.num_indices, 0, 0..obj.0.shown_instances.unwrap_or(1));
+        render_pass.draw_indexed(
+            0..obj.0.num_indices,
+            0,
+            0..obj.0.shown_instances.unwrap_or(1),
+        );
     }
 }
 
@@ -455,35 +515,30 @@ fn build_obj1(device: &wgpu::Device, instances: &Vec<Instance>) -> RenderObject 
         vertices: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("vertices_obj1"),
             contents: bytemuck::cast_slice(&[
-                graphics::Vertex { position: [0.5, 0.5, 0.5], tex_coords: [1.0, 0.0], }, // 0
-                graphics::Vertex { position: [-0.5, 0.5, 0.5], tex_coords: [0.0, 0.0], }, // 1
-                graphics::Vertex { position: [0.5, -0.5, 0.5], tex_coords: [1.0, 1.0], }, // 2
-                graphics::Vertex { position: [-0.5, -0.5, 0.5], tex_coords: [0.0, 1.0], }, // 3
-
-                graphics::Vertex { position: [-0.5, 0.5, 0.5], tex_coords: [1.0, 0.0], }, // 4
-                graphics::Vertex { position: [-0.5, 0.5, -0.5], tex_coords: [0.0, 0.0], }, // 5
-                graphics::Vertex { position: [-0.5, -0.5, 0.5], tex_coords: [1.0, 1.0], }, // 6
-                graphics::Vertex { position: [-0.5, -0.5, -0.5], tex_coords: [0.0, 1.0], }, // 7
-
-                graphics::Vertex { position: [0.5, 0.5, 0.5], tex_coords: [1.0, 0.0], }, // 8
-                graphics::Vertex { position: [0.5, 0.5, -0.5], tex_coords: [0.0, 0.0], }, // 9
-                graphics::Vertex { position: [-0.5, 0.5, 0.5], tex_coords: [1.0, 1.0], }, // 10
-                graphics::Vertex { position: [-0.5, 0.5, -0.5], tex_coords: [0.0, 1.0], }, // 11
-
-                graphics::Vertex { position: [-0.5, 0.5, -0.5], tex_coords: [1.0, 0.0], }, // 12
-                graphics::Vertex { position: [0.5, 0.5, -0.5], tex_coords: [0.0, 0.0], }, // 13
-                graphics::Vertex { position: [-0.5, -0.5, -0.5], tex_coords: [1.0, 1.0], }, // 14
-                graphics::Vertex { position: [0.5, -0.5, -0.5], tex_coords: [0.0, 1.0], }, // 15
-
-                graphics::Vertex { position: [0.5, 0.5, -0.5], tex_coords: [1.0, 0.0], }, // 16
-                graphics::Vertex { position: [0.5, 0.5, 0.5], tex_coords: [0.0, 0.0], }, // 17
-                graphics::Vertex { position: [0.5, -0.5, -0.5], tex_coords: [1.0, 1.0], }, // 18
-                graphics::Vertex { position: [0.5, -0.5, 0.5], tex_coords: [0.0, 1.0], }, // 19
-
-                graphics::Vertex { position: [0.5, -0.5, 0.5], tex_coords: [1.0, 0.0], }, // 20
-                graphics::Vertex { position: [-0.5, -0.5, 0.5], tex_coords: [0.0, 0.0], }, // 21
-                graphics::Vertex { position: [0.5, -0.5, -0.5], tex_coords: [1.0, 1.0], }, // 22
-                graphics::Vertex { position: [-0.5, -0.5, -0.5], tex_coords: [0.0, 1.0], }, // 23
+                graphics::Vertex { position: [0.5, 0.5, 0.5], tex_coords: [1.0, 0.0] }, // 0
+                graphics::Vertex { position: [-0.5, 0.5, 0.5], tex_coords: [0.0, 0.0] }, // 1
+                graphics::Vertex { position: [0.5, -0.5, 0.5], tex_coords: [1.0, 1.0] }, // 2
+                graphics::Vertex { position: [-0.5, -0.5, 0.5], tex_coords: [0.0, 1.0] }, // 3
+                graphics::Vertex { position: [-0.5, 0.5, 0.5], tex_coords: [1.0, 0.0] }, // 4
+                graphics::Vertex { position: [-0.5, 0.5, -0.5], tex_coords: [0.0, 0.0] }, // 5
+                graphics::Vertex { position: [-0.5, -0.5, 0.5], tex_coords: [1.0, 1.0] }, // 6
+                graphics::Vertex { position: [-0.5, -0.5, -0.5], tex_coords: [0.0, 1.0] }, // 7
+                graphics::Vertex { position: [0.5, 0.5, 0.5], tex_coords: [1.0, 0.0] }, // 8
+                graphics::Vertex { position: [0.5, 0.5, -0.5], tex_coords: [0.0, 0.0] }, // 9
+                graphics::Vertex { position: [-0.5, 0.5, 0.5], tex_coords: [1.0, 1.0] }, // 10
+                graphics::Vertex { position: [-0.5, 0.5, -0.5], tex_coords: [0.0, 1.0] }, // 11
+                graphics::Vertex { position: [-0.5, 0.5, -0.5], tex_coords: [1.0, 0.0] }, // 12
+                graphics::Vertex { position: [0.5, 0.5, -0.5], tex_coords: [0.0, 0.0] }, // 13
+                graphics::Vertex { position: [-0.5, -0.5, -0.5], tex_coords: [1.0, 1.0] }, // 14
+                graphics::Vertex { position: [0.5, -0.5, -0.5], tex_coords: [0.0, 1.0] }, // 15
+                graphics::Vertex { position: [0.5, 0.5, -0.5], tex_coords: [1.0, 0.0] }, // 16
+                graphics::Vertex { position: [0.5, 0.5, 0.5], tex_coords: [0.0, 0.0] }, // 17
+                graphics::Vertex { position: [0.5, -0.5, -0.5], tex_coords: [1.0, 1.0] }, // 18
+                graphics::Vertex { position: [0.5, -0.5, 0.5], tex_coords: [0.0, 1.0] }, // 19
+                graphics::Vertex { position: [0.5, -0.5, 0.5], tex_coords: [1.0, 0.0] }, // 20
+                graphics::Vertex { position: [-0.5, -0.5, 0.5], tex_coords: [0.0, 0.0] }, // 21
+                graphics::Vertex { position: [0.5, -0.5, -0.5], tex_coords: [1.0, 1.0] }, // 22
+                graphics::Vertex { position: [-0.5, -0.5, -0.5], tex_coords: [0.0, 1.0] }, // 23
             ]),
             usage: wgpu::BufferUsages::VERTEX,
         }),
@@ -513,13 +568,15 @@ fn build_obj1(device: &wgpu::Device, instances: &Vec<Instance>) -> RenderObject 
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         }),
         num_indices: 36,
-        instances_buffer: Some(device.create_buffer_init(
-            &wgpu::util::BufferInitDescriptor {
+        instances_buffer: Some(
+            device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
                 label: Some("obj1_instance_buffer"),
-                contents: bytemuck::cast_slice(&instances.iter().map(Instance::as_raw).collect::<Vec<_>>()),
+                contents: bytemuck::cast_slice(
+                    &instances.iter().map(Instance::as_raw).collect::<Vec<_>>(),
+                ),
                 usage: wgpu::BufferUsages::VERTEX,
-            }
-        )),
+            }),
+        ),
         instances: Some(instances.clone()),
         shown_instances: Some((INSTANCED_ROWS * INSTANCED_COLS) as u32),
     }
@@ -530,16 +587,15 @@ fn build_obj2(device: &wgpu::Device, instances: &Vec<Instance>) -> RenderObject 
         vertices: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("vertices_obj2"),
             contents: bytemuck::cast_slice(&[
-                graphics::Vertex { position: [0.0, 0.5, 0.0], tex_coords: [0.5, 0.0], }, // 0
-                graphics::Vertex { position: [-0.5, -0.5, -0.5], tex_coords: [0.0, 1.0], }, // 1
-                graphics::Vertex { position: [-0.5, -0.5, 0.5], tex_coords: [1.0, 1.0], }, // 2
-                graphics::Vertex { position: [0.5, -0.5, 0.5], tex_coords: [0.0, 1.0], }, // 3
-                graphics::Vertex { position: [0.5, -0.5, -0.5], tex_coords: [1.0, 1.0], }, // 4
-
-                graphics::Vertex { position: [-0.5, -0.5, -0.5], tex_coords: [0.0, 1.0], }, // 5
-                graphics::Vertex { position: [-0.5, -0.5, 0.5], tex_coords: [0.0, 0.0], }, // 6
-                graphics::Vertex { position: [0.5, -0.5, 0.5], tex_coords: [1.0, 0.0], }, // 7
-                graphics::Vertex { position: [0.5, -0.5, -0.5], tex_coords: [1.0, 1.0], }, // 8
+                graphics::Vertex { position: [0.0, 0.5, 0.0], tex_coords: [0.5, 0.0] }, // 0
+                graphics::Vertex { position: [-0.5, -0.5, -0.5], tex_coords: [0.0, 1.0] }, // 1
+                graphics::Vertex { position: [-0.5, -0.5, 0.5], tex_coords: [1.0, 1.0] }, // 2
+                graphics::Vertex { position: [0.5, -0.5, 0.5], tex_coords: [0.0, 1.0] }, // 3
+                graphics::Vertex { position: [0.5, -0.5, -0.5], tex_coords: [1.0, 1.0] }, // 4
+                graphics::Vertex { position: [-0.5, -0.5, -0.5], tex_coords: [0.0, 1.0] }, // 5
+                graphics::Vertex { position: [-0.5, -0.5, 0.5], tex_coords: [0.0, 0.0] }, // 6
+                graphics::Vertex { position: [0.5, -0.5, 0.5], tex_coords: [1.0, 0.0] }, // 7
+                graphics::Vertex { position: [0.5, -0.5, -0.5], tex_coords: [1.0, 1.0] }, // 8
             ]),
             usage: wgpu::BufferUsages::VERTEX,
         }),
@@ -563,13 +619,15 @@ fn build_obj2(device: &wgpu::Device, instances: &Vec<Instance>) -> RenderObject 
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         }),
         num_indices: 18,
-        instances_buffer: Some(device.create_buffer_init(
-            &wgpu::util::BufferInitDescriptor {
+        instances_buffer: Some(
+            device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
                 label: Some("obj2_instance_buffer"),
-                contents: bytemuck::cast_slice(&instances.iter().map(Instance::as_raw).collect::<Vec<_>>()),
+                contents: bytemuck::cast_slice(
+                    &instances.iter().map(Instance::as_raw).collect::<Vec<_>>(),
+                ),
                 usage: wgpu::BufferUsages::VERTEX,
-            }
-        )),
+            }),
+        ),
         instances: Some(instances.clone()),
         shown_instances: Some((INSTANCED_ROWS * INSTANCED_COLS) as u32),
     }
@@ -580,20 +638,36 @@ fn build_floor(device: &wgpu::Device) -> RenderObject {
         vertices: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("vertices_floor"),
             contents: bytemuck::cast_slice(&[
-                graphics::Vertex { position: [0.0, FLOOR_Y, 0.0], tex_coords: [0.0, 0.0] },
-                graphics::Vertex { position: [0.0, FLOOR_Y, (INSTANCED_COLS - 1) as f32 * INSTANCE_SPACING], tex_coords: [0.0, 5.0] },
-                graphics::Vertex { position: [(INSTANCED_ROWS - 1) as f32 * INSTANCE_SPACING, FLOOR_Y, 0.0], tex_coords: [5.0, 0.0] },
-                graphics::Vertex { position: [(INSTANCED_ROWS - 1) as f32 * INSTANCE_SPACING, FLOOR_Y, (INSTANCED_COLS - 1) as f32 * INSTANCE_SPACING], tex_coords: [5.0, 5.0] },
+                graphics::Vertex {
+                    position: [-75.0, FLOOR_Y, 0.0],
+                    tex_coords: [0.0, 0.0],
+                },
+                graphics::Vertex {
+                    position: [-75.0, FLOOR_Y, (INSTANCED_COLS - 1) as f32 * INSTANCE_SPACING],
+                    tex_coords: [0.0, 5.0],
+                },
+                graphics::Vertex {
+                    position: [(INSTANCED_ROWS - 1) as f32 * INSTANCE_SPACING - 75.0, FLOOR_Y, 0.0],
+                    tex_coords: [5.0, 0.0],
+                },
+                graphics::Vertex {
+                    position: [
+                        (INSTANCED_ROWS - 1) as f32 * INSTANCE_SPACING - 75.0,
+                        FLOOR_Y,
+                        (INSTANCED_COLS - 1) as f32 * INSTANCE_SPACING,
+                    ],
+                    tex_coords: [5.0, 5.0],
+                },
             ]),
             usage: wgpu::BufferUsages::VERTEX,
         }),
         indices: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("indices_floor"),
             contents: bytemuck::cast_slice(&[
-                0u32, 1, 2,
-                1, 3, 2,
-                1, 0, 2,
-                3, 1, 2,
+                0u32, 1, 2, 
+                1, 3, 2, 
+                1, 0, 2, 
+                3, 1, 2
             ]),
             usage: wgpu::BufferUsages::INDEX,
         }),
@@ -611,8 +685,12 @@ fn build_floor(device: &wgpu::Device) -> RenderObject {
     }
 }
 
-fn build_sphere(device: &wgpu::Device, instances: &Vec<Instance>) -> RenderObject {
-    let (vertices, indices) = sphere_data(5.0, 30);
+fn build_sphere(device: &wgpu::Device, instances: &Vec<Instance>, pythagoras: bool) -> RenderObject {
+    let (vertices, indices) = if pythagoras {
+        pythagoras_sphere(5.0, 20)
+    } else {
+        sine_sphere(5.0, 25)
+    };
 
     RenderObject {
         vertices: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -633,44 +711,44 @@ fn build_sphere(device: &wgpu::Device, instances: &Vec<Instance>) -> RenderObjec
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         }),
         num_indices: indices.len() as u32,
-        instances_buffer: Some(device.create_buffer_init(
-            &wgpu::util::BufferInitDescriptor {
+        instances_buffer: Some(
+            device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
                 label: Some("sphere_instance_buffer"),
-                contents: bytemuck::cast_slice(&instances.iter().map(Instance::as_raw).collect::<Vec<_>>()),
+                contents: bytemuck::cast_slice(
+                    &instances.iter().map(Instance::as_raw).collect::<Vec<_>>(),
+                ),
                 usage: wgpu::BufferUsages::VERTEX,
-            }
-        )),
+            }),
+        ),
         instances: Some(instances.clone()),
-        shown_instances: Some((SPHERE_INSTANCED_ROWS * SPHERE_INSTANCED_COLS) as u32),
+        shown_instances: Some(instances.len() as u32),
     }
 }
 
-fn sphere_data(radius: f64, detail: u32) -> (Vec<graphics::Vertex>, Vec<u32>) {
+fn pythagoras_sphere(radius: f64, lod: u32) -> (Vec<graphics::Vertex>, Vec<u32>) {
     let mut vertices = Vec::new();
-    let factor = radius / detail as f64;
+    let factor = radius / lod as f64;
     let mut verts_per_band = 0;
     let mut bands = 0;
 
     let mut y = -radius;
-    for _ in 0..=(detail * 2) {
+    for _ in 0..=(lod * 2) {
         verts_per_band = 0;
-        let band_radius = (radius * radius - y * y).sqrt();
-        let band_factor = band_radius / detail as f64;
+        let band_radius = (radius * radius - y * y).max(0.0).sqrt();
+        let band_factor = band_radius / lod as f64;
 
         let mut x = -band_radius;
-        for _ in 0..=(detail * 2) {
+        for _ in 0..=(lod * 2) {
             let z = (band_radius * band_radius - x * x).max(0.0).sqrt();
             let tex = [((x / radius) as f32).abs(), ((z / radius) as f32).abs()];
-            vertices.push(
-                graphics::Vertex {
-                    position: [x as f32, y as f32, z as f32], tex_coords: tex
-                }
-            );
-            vertices.push(
-                graphics::Vertex {
-                    position: [x as f32, y as f32, -z as f32], tex_coords: tex
-                }
-            );
+            vertices.push(graphics::Vertex {
+                position: [x as f32, y as f32, z as f32],
+                tex_coords: tex,
+            });
+            vertices.push(graphics::Vertex {
+                position: [x as f32, y as f32, -z as f32],
+                tex_coords: tex,
+            });
 
             x += band_factor;
             verts_per_band += 2;
@@ -697,6 +775,161 @@ fn sphere_data(radius: f64, detail: u32) -> (Vec<graphics::Vertex>, Vec<u32>) {
                 indices.push((i * verts_per_band) + j);
                 indices.push((i * verts_per_band) + j + 2);
                 indices.push(((i + 1) * verts_per_band) + j + 2);
+            }
+        }
+    }
+
+    (vertices, indices)
+}
+
+fn sine_sphere(radius: f64, lod: u32) -> (Vec<graphics::Vertex>, Vec<u32>) {
+    const PI: f64 = std::f64::consts::PI;
+    let mut vertices = Vec::new();
+    let theta = PI / lod as f64;
+
+    let mut yaw: f64 = 0.0;
+    for _ in 0..lod {
+        let mut pitch: f64 = 0.0;
+        for _ in 0..lod {
+            let x = yaw.cos() * pitch.cos() * radius;
+            let y = pitch.sin() * radius;
+            let z = yaw.sin() * pitch.cos() * radius;
+
+            let tex = [((x / radius) as f32).abs(), ((z / radius) as f32).abs()];
+            vertices.push(graphics::Vertex {
+                position: [x as f32, y as f32, z as f32],
+                tex_coords: tex,
+            });
+            vertices.push(graphics::Vertex {
+                position: [-x as f32, -y as f32, -z as f32],
+                tex_coords: tex,
+            });
+
+            pitch += theta;
+       }
+
+       yaw += theta;
+    }
+
+    let mut indices = Vec::new();
+    let lod2 = lod * 2;
+    for i in 0..lod {
+        for j in 0..lod2 {
+            // triangle 1
+            ij(&mut indices, i, j, lod);
+            i2j2(&mut indices, i, j, lod);
+            i2j(&mut indices, i, j, lod);
+
+            //triangle 2
+            ij(&mut indices, i, j, lod);
+            ij2(&mut indices, i, j, lod);
+            i2j2(&mut indices, i, j, lod);
+        }
+    }
+
+    fn ij(indices: &mut Vec<u32>, i: u32, j: u32, lod: u32) {
+        let lod2 = lod * 2;
+        indices.push((i * lod2) + j);
+    }
+
+    fn i2j(indices: &mut Vec<u32>, i: u32, j: u32, lod: u32) {
+        let calc_i_add = |i| if i == lod - 1 { 0 } else { i + 1 };
+        let lod2 = lod * 2;
+        if i == lod - 1 {
+            indices.push(get_last1(j, lod2));
+        } else {
+            indices.push((calc_i_add(i) * lod2) + j);
+        }
+    }
+
+    fn ij2(indices: &mut Vec<u32>, i: u32, j: u32, lod: u32) {
+        let lod2 = lod * 2;
+        let sub1 = (lod2 - 3) + (j % 2) * 2;
+        let sub2 = (lod2 + 1) + (j % 2) * 2;
+        let add = 2;
+        if j == lod2 - 1 || j == 1 {
+            if (j % 2 == 1 && j > lod) || (j % 2 == 0 && j < lod) {
+                debug!("i: {}, j: {}", i, j);
+                indices.push((i * lod2) + j - sub1);
+            } else {
+                indices.push((i * lod2) + lod2 * 2 + j - sub2);
+            }
+        } else {
+            if (j % 2 == 1 && j > lod) || (j % 2 == 0 && j < lod) {
+                indices.push((i * lod2) + j + add);
+            } else {
+                indices.push((i * lod2) + j - add);
+            }
+        }
+    }
+
+    fn i2j2(indices: &mut Vec<u32>, i: u32, j: u32, lod: u32) {
+        let lod2 = lod * 2;
+        let sub1 = (lod2 - 3) + (j % 2) * 2;
+        let sub2 = (lod2 + 1) + (j % 2) * 2;
+        let add = 2;
+        let calc_i_add = |i| if i == lod - 1 { 0 } else { i + 1 };
+        if j == lod2 - 1 || j == 1 {
+            if i == lod - 1 {
+                indices.push(get_last2(j, lod2));
+            } else {
+                if (j % 2 == 1 && j > lod) || (j % 2 == 0 && j < lod) {
+                    indices.push((calc_i_add(i) * lod2) + j - sub1);
+                } else {
+                    indices.push((calc_i_add(i) * lod2) + lod2 * 2 + j - sub2);
+                }
+            }
+        } else {
+            if i == lod - 1 {
+                indices.push(get_last2(j, lod2));
+            } else {
+                if (j % 2 == 1 && j > lod) || (j % 2 == 0 && j < lod) {
+                    indices.push((calc_i_add(i) * lod2) + j + add);
+                } else {
+                    indices.push((calc_i_add(i) * lod2) + j - add);
+                }
+            }
+        }
+    }
+
+    fn check_j(j: u32) -> u32 {
+        if j % 2 == 0 { 0 } else { 1 }
+    }
+
+    fn get_last1(j: u32, lod2: u32) -> u32 {
+        if j % 2 == 0 {
+            if j == 0 {
+                1
+            } else {
+                lod2 - j + check_j(j)
+            }
+        } else {
+            if j == 1 {
+                0
+            } else {
+                lod2 - j + 2
+            }
+        }
+    }
+
+    fn get_last2(j: u32, lod2: u32) -> u32 {
+        if j % 2 == 0 {
+            if (j % 2 == 1 && j > lod2 / 2) || (j % 2 == 0 && j < lod2 / 2) {
+                lod2 - 2 - j
+            } else {
+                lod2 + 2 - j
+            }
+        } else {
+            match j {
+                1 => 2,
+                3 => 0,
+                _ => {
+                    if (j % 2 == 1 && j > lod2 / 2) || (j % 2 == 0 && j < lod2 / 2) {
+                        lod2 - j
+                    } else {
+                        lod2 - j + 4
+                    }
+                }
             }
         }
     }
