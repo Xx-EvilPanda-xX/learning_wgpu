@@ -44,9 +44,10 @@ struct RenderObject {
     vertices: wgpu::Buffer,
     indices: wgpu::Buffer,
     model_buf: wgpu::Buffer,
+    is_instanced_buf: wgpu::Buffer,
     num_indices: u32,
     instances_buffer: Option<wgpu::Buffer>,
-    instances: Option<Vec<Instance>>,
+    num_instances: Option<u32>,
     shown_instances: Option<u32>,
 }
 
@@ -62,8 +63,7 @@ impl App {
     pub fn new(window: &winit::window::Window) -> Self {
         let (surface, device, queue, config, shader) = graphics::create_wgpu_context(window);
         let bind_group_layout = build_bind_group_layout(&device);
-        let render_pipeline =
-            graphics::build_pipeline(&[&bind_group_layout], &device, &shader, &config);
+        let render_pipeline = graphics::build_pipeline(&[&bind_group_layout], &device, &shader, &config);
         let camera = Camera::new(
             (0.0, 0.0, 0.0).into(),
             45.0,
@@ -101,7 +101,7 @@ impl App {
             })
             .collect::<Vec<_>>();
 
-        let static_instances = (0..SPHERE_INSTANCED_ROWS)
+        let sphere_instances = (0..SPHERE_INSTANCED_ROWS)
             .flat_map(|x| {
                 (0..SPHERE_INSTANCED_COLS).map(move |z| Instance {
                     trans: Vector3::new(
@@ -120,57 +120,26 @@ impl App {
         let obj1 = build_obj1(&device, &rot_instances);
         let obj2 = build_obj2(&device, &rot_instances);
         let floor = build_floor(&device);
-        let instances_split = static_instances.split_at(static_instances.len() / 2);
+        let instances_split = sphere_instances.split_at(sphere_instances.len() / 2);
         let pythagoras_sphere = build_sphere(&device, &Vec::from(instances_split.0), true);
         let sine_sphere = build_sphere(&device, &Vec::from(instances_split.1), false);
 
-        let obj1_bind_group = graphics::build_bind_group(
+        let create_bind_group = |model_buf, is_instanced_buf, tex_path, tex_name| graphics::build_bind_group(
             &bind_group_layout,
-            &std::fs::read("res/tex/tex4.jpg").expect("Failed to load texture"),
-            "texture_obj1",
+            &std::fs::read(tex_path).expect("Failed to load texture"),
+            tex_name,
             &device,
             &queue,
-            vec![&camera_uniform_buffer, &obj1.model_buf],
+            vec![&camera_uniform_buffer, model_buf, is_instanced_buf],
         );
 
-        let obj2_bind_group = graphics::build_bind_group(
-            &bind_group_layout,
-            &std::fs::read("res/tex/tex6.png").expect("Failed to load texture"),
-            "texture_obj2",
-            &device,
-            &queue,
-            vec![&camera_uniform_buffer, &obj2.model_buf],
-        );
+        let obj1_bind_group = create_bind_group(&obj1.model_buf, &obj1.is_instanced_buf, "res/tex/tex4.jpg", "texture_obj1");
+        let obj2_bind_group = create_bind_group(&obj2.model_buf, &obj2.is_instanced_buf,"res/tex/tex6.png", "texture_obj2");
+        let floor_bind_group = create_bind_group(&floor.model_buf, &floor.is_instanced_buf,"res/tex/floor.png", "texture_floor");
+        let pythagoras_sphere_bind_group = create_bind_group(&pythagoras_sphere.model_buf, &pythagoras_sphere.is_instanced_buf,"res/tex/tex4.jpg", "texture_sphere");
+        let sine_sphere_bind_group = create_bind_group(&sine_sphere.model_buf, &sine_sphere.is_instanced_buf,"res/tex/tex6.png", "texture_sphere");
 
-        let floor_bind_group = graphics::build_bind_group(
-            &bind_group_layout,
-            &std::fs::read("res/tex/floor.png").expect("Failed to load texture"),
-            "texture_floor",
-            &device,
-            &queue,
-            vec![&camera_uniform_buffer, &floor.model_buf],
-        );
-
-        let pythagoras_sphere_bind_group = graphics::build_bind_group(
-            &bind_group_layout,
-            &std::fs::read("res/tex/tex4.jpg").expect("Failed to load texture"),
-            "texture_sphere",
-            &device,
-            &queue,
-            vec![&camera_uniform_buffer, &pythagoras_sphere.model_buf],
-        );
-
-        let sine_sphere_bind_group = graphics::build_bind_group(
-            &bind_group_layout,
-            &std::fs::read("res/tex/tex6.png").expect("Failed to load texture"),
-            "texture_sphere",
-            &device,
-            &queue,
-            vec![&camera_uniform_buffer, &sine_sphere.model_buf],
-        );
-
-        let depth_texture =
-            graphics::create_depth_texture(&device, &config, "global_depth_texture");
+        let depth_texture = graphics::create_depth_texture(&device, &config, "global_depth_texture");
 
         Self {
             surface,
@@ -180,7 +149,7 @@ impl App {
             size: window.inner_size(),
             clear_color: wgpu::Color {
                 r: 0.0,
-                g: 0.5,
+                g: 0.25,
                 b: 0.0,
                 a: 1.0,
             },
@@ -265,18 +234,18 @@ impl App {
         if let (
             Some(shown_instances1),
             Some(shown_instances2),
-            Some(instances1),
-            Some(instances2),
+            Some(num_instances1),
+            Some(num_instances2),
         ) = (
             &mut self.obj1.0.shown_instances,
             &mut self.obj2.0.shown_instances,
-            &self.obj1.0.instances,
-            &self.obj2.0.instances,
+            &self.obj1.0.num_instances,
+            &self.obj2.0.num_instances,
         ) {
             if self.input_state.up_pressed && self.cooldowns.1 <= 0.75 {
                 match self.selected_obj {
-                    0 if *shown_instances1 < instances1.len() as u32 => *shown_instances1 += 1,
-                    1 if *shown_instances2 < instances2.len() as u32 => *shown_instances2 += 1,
+                    0 if *shown_instances1 < *num_instances1 => *shown_instances1 += 1,
+                    1 if *shown_instances2 < *num_instances2 => *shown_instances2 += 1,
                     _ => {}
                 }
                 self.cooldowns.1 = 1.0;
@@ -360,37 +329,18 @@ impl App {
         let sine_sphere_model = Matrix4::from_translation(Vector3::new(0.0, FLOOR_Y + 5.0, 0.0))
             * Matrix4::from_angle_y(cgmath::Rad { 0: now });
 
-        self.queue.write_buffer(
-            &self.obj1.0.model_buf,
+        let write_buffer = |dest, src: Matrix4<f32>| self.queue.write_buffer(
+            dest,
             0,
             bytemuck::cast_slice(&[super::graphics::RawMatrix {
-                mat: obj1_model.into(),
+                mat: src.into(),
             }]),
         );
 
-        self.queue.write_buffer(
-            &self.obj2.0.model_buf,
-            0,
-            bytemuck::cast_slice(&[super::graphics::RawMatrix {
-                mat: obj2_model.into(),
-            }]),
-        );
-
-        self.queue.write_buffer(
-            &self.pythagoras_sphere.0.model_buf,
-            0,
-            bytemuck::cast_slice(&[super::graphics::RawMatrix {
-                mat: pythagoras_sphere_model.into(),
-            }]),
-        );
-
-        self.queue.write_buffer(
-            &self.sine_sphere.0.model_buf,
-            0,
-            bytemuck::cast_slice(&[super::graphics::RawMatrix {
-                mat: sine_sphere_model.into(),
-            }]),
-        );
+        write_buffer(&self.obj1.0.model_buf, obj1_model);
+        write_buffer(&self.obj2.0.model_buf, obj2_model);
+        write_buffer(&self.pythagoras_sphere.0.model_buf, pythagoras_sphere_model);
+        write_buffer(&self.sine_sphere.0.model_buf, sine_sphere_model);
 
         if self.input_state.f_pressed {
             debug!(
@@ -489,8 +439,18 @@ fn build_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
                 },
                 count: None,
             },
-            wgpu::BindGroupLayoutEntry { // texture data
+            wgpu::BindGroupLayoutEntry { // is instanced uniform
                 binding: 2,
+                visibility: wgpu::ShaderStages::VERTEX,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            },
+            wgpu::BindGroupLayoutEntry { // texture data
+                binding: 3,
                 visibility: wgpu::ShaderStages::FRAGMENT,
                 ty: wgpu::BindingType::Texture {
                     multisampled: false,
@@ -500,7 +460,7 @@ fn build_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
                 count: None,
             },
             wgpu::BindGroupLayoutEntry { // texture sampler
-                binding: 3,
+                binding: 4,
                 visibility: wgpu::ShaderStages::FRAGMENT,
                 ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
                 count: None,
@@ -567,6 +527,11 @@ fn build_obj1(device: &wgpu::Device, instances: &Vec<Instance>) -> RenderObject 
             }]),
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         }),
+        is_instanced_buf: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("is_instanced_obj1"),
+            contents: bytemuck::cast_slice(&[1u32]),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        }),
         num_indices: 36,
         instances_buffer: Some(
             device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -577,7 +542,7 @@ fn build_obj1(device: &wgpu::Device, instances: &Vec<Instance>) -> RenderObject 
                 usage: wgpu::BufferUsages::VERTEX,
             }),
         ),
-        instances: Some(instances.clone()),
+        num_instances: Some(instances.len() as u32),
         shown_instances: Some((INSTANCED_ROWS * INSTANCED_COLS) as u32),
     }
 }
@@ -618,6 +583,11 @@ fn build_obj2(device: &wgpu::Device, instances: &Vec<Instance>) -> RenderObject 
             }]),
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         }),
+        is_instanced_buf: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("is_instanced_obj2"),
+            contents: bytemuck::cast_slice(&[1u32]),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        }),
         num_indices: 18,
         instances_buffer: Some(
             device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -628,7 +598,7 @@ fn build_obj2(device: &wgpu::Device, instances: &Vec<Instance>) -> RenderObject 
                 usage: wgpu::BufferUsages::VERTEX,
             }),
         ),
-        instances: Some(instances.clone()),
+        num_instances: Some(instances.len() as u32),
         shown_instances: Some((INSTANCED_ROWS * INSTANCED_COLS) as u32),
     }
 }
@@ -639,20 +609,20 @@ fn build_floor(device: &wgpu::Device) -> RenderObject {
             label: Some("vertices_floor"),
             contents: bytemuck::cast_slice(&[
                 graphics::Vertex {
-                    position: [-75.0, FLOOR_Y, 0.0],
+                    position: [0.0, FLOOR_Y, 0.0],
                     tex_coords: [0.0, 0.0],
                 },
                 graphics::Vertex {
-                    position: [-75.0, FLOOR_Y, (INSTANCED_COLS - 1) as f32 * INSTANCE_SPACING],
+                    position: [0.0, FLOOR_Y, (INSTANCED_COLS - 1) as f32 * INSTANCE_SPACING],
                     tex_coords: [0.0, 5.0],
                 },
                 graphics::Vertex {
-                    position: [(INSTANCED_ROWS - 1) as f32 * INSTANCE_SPACING - 75.0, FLOOR_Y, 0.0],
+                    position: [(INSTANCED_ROWS - 1) as f32 * INSTANCE_SPACING, FLOOR_Y, 0.0],
                     tex_coords: [5.0, 0.0],
                 },
                 graphics::Vertex {
                     position: [
-                        (INSTANCED_ROWS - 1) as f32 * INSTANCE_SPACING - 75.0,
+                        (INSTANCED_ROWS - 1) as f32 * INSTANCE_SPACING,
                         FLOOR_Y,
                         (INSTANCED_COLS - 1) as f32 * INSTANCE_SPACING,
                     ],
@@ -678,9 +648,14 @@ fn build_floor(device: &wgpu::Device) -> RenderObject {
             }]),
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         }),
+        is_instanced_buf: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("is_instanced_floor"),
+            contents: bytemuck::cast_slice(&[0u32]),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        }),
         num_indices: 12,
         instances_buffer: None,
-        instances: None,
+        num_instances: None,
         shown_instances: None,
     }
 }
@@ -710,6 +685,11 @@ fn build_sphere(device: &wgpu::Device, instances: &Vec<Instance>, pythagoras: bo
             }]),
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         }),
+        is_instanced_buf: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("is_instanced_sphere"),
+            contents: bytemuck::cast_slice(&[1u32]),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        }),
         num_indices: indices.len() as u32,
         instances_buffer: Some(
             device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -720,7 +700,7 @@ fn build_sphere(device: &wgpu::Device, instances: &Vec<Instance>, pythagoras: bo
                 usage: wgpu::BufferUsages::VERTEX,
             }),
         ),
-        instances: Some(instances.clone()),
+        num_instances: Some(instances.len() as u32),
         shown_instances: Some(instances.len() as u32),
     }
 }
@@ -849,7 +829,7 @@ fn sine_sphere(radius: f64, lod: u32) -> (Vec<graphics::Vertex>, Vec<u32>) {
         let add = 2;
         if j == lod2 - 1 || j == 1 {
             if (j % 2 == 1 && j > lod) || (j % 2 == 0 && j < lod) {
-                debug!("i: {}, j: {}", i, j);
+                // debug!("i: {}, j: {}", i, j);
                 indices.push((i * lod2) + j - sub1);
             } else {
                 indices.push((i * lod2) + lod2 * 2 + j - sub2);
