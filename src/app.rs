@@ -136,8 +136,8 @@ impl App {
         let obj1_bind_group = create_bind_group(&obj1.model_buf, &obj1.is_instanced_buf, "res/tex/tex4.jpg", "texture_obj1");
         let obj2_bind_group = create_bind_group(&obj2.model_buf, &obj2.is_instanced_buf,"res/tex/tex6.png", "texture_obj2");
         let floor_bind_group = create_bind_group(&floor.model_buf, &floor.is_instanced_buf,"res/tex/floor.png", "texture_floor");
-        let pythagoras_sphere_bind_group = create_bind_group(&pythagoras_sphere.model_buf, &pythagoras_sphere.is_instanced_buf,"res/tex/tex4.jpg", "texture_sphere");
-        let sine_sphere_bind_group = create_bind_group(&sine_sphere.model_buf, &sine_sphere.is_instanced_buf,"res/tex/tex6.png", "texture_sphere");
+        let pythagoras_sphere_bind_group = create_bind_group(&pythagoras_sphere.model_buf, &pythagoras_sphere.is_instanced_buf,"res/tex/tex.png", "texture_sphere");
+        let sine_sphere_bind_group = create_bind_group(&sine_sphere.model_buf, &sine_sphere.is_instanced_buf,"res/tex/tex2.png", "texture_sphere");
 
         let depth_texture = graphics::create_depth_texture(&device, &config, "global_depth_texture");
 
@@ -278,27 +278,7 @@ impl App {
         if c.g < 0.0 { c.g = 0.0; }
         if c.b < 0.0 { c.b = 0.0; }
 
-        let m = self.input_state.get_movement();
-        let v = &mut self.camera.vel;
-        let dec = 1.0 - self.delta_time as f32 * 10.0;
-
-        if m.x != 0.0 {
-            v.x = m.x;
-        } else {
-            v.x *= dec;
-        }
-        if m.y != 0.0 {
-            v.y = m.y;
-        } else {
-            v.y *= dec;
-        }
-        if m.z != 0.0 {
-            v.z = m.z;
-        } else {
-            v.z *= dec;
-        }
-
-        self.camera.update_pos(self.delta_time as f32);
+        self.camera.update_pos(self.delta_time as f32, &self.input_state);
         self.camera.update_look(
             (mouse_move.0 as f32, mouse_move.1 as f32),
             self.delta_time as f32,

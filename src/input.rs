@@ -1,4 +1,3 @@
-use cgmath::Vector3;
 use winit::event::{ElementState, KeyboardInput, VirtualKeyCode};
 
 pub struct InputState {
@@ -28,8 +27,6 @@ impl InputState {
     const DOWN: VirtualKeyCode = VirtualKeyCode::Down;
     const CTRL: VirtualKeyCode = VirtualKeyCode::LControl;
     const F: VirtualKeyCode = VirtualKeyCode::F;
-
-    const SPRINT_SPEED: f32 = 2.0;
 
     pub fn new() -> Self {
         InputState {
@@ -83,31 +80,5 @@ impl InputState {
         let unhandled = self.unhandled_mouse_move;
         self.unhandled_mouse_move = (0.0, 0.0);
         unhandled
-    }
-
-    pub fn get_movement(&self) -> Vector3<f32> {
-        let mut movement = Vector3::new(0.0, 0.0, 0.0);
-        if self.forward_pressed {
-            movement.x += 1.5;
-        }
-        if self.backward_pressed {
-            movement.x -= 1.5;
-        }
-        if self.right_pressed {
-            movement.z += 1.5;
-        }
-        if self.left_pressed {
-            movement.z -= 1.5;
-        }
-        if self.space_pressed {
-            movement.y += 1.5;
-        }
-        if self.shift_pressed {
-            movement.y -= 1.5;
-        }
-        if self.ctrl_pressed {
-            movement.x *= Self::SPRINT_SPEED;
-        }
-        movement
     }
 }
