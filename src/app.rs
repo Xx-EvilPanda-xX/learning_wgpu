@@ -3,6 +3,7 @@ use crate::graphics;
 use crate::graphics::Instance;
 use crate::graphics::RawMatrix;
 use crate::input;
+use cgmath::InnerSpace;
 use cgmath::{Matrix4, Rotation3, SquareMatrix, Vector3};
 use log::debug;
 use wgpu::util::DeviceExt;
@@ -23,7 +24,6 @@ pub struct App {
     obj1: (RenderObject, wgpu::BindGroup),
     obj2: (RenderObject, wgpu::BindGroup),
     pythagoras_sphere: (RenderObject, wgpu::BindGroup),
-    sine_sphere: (RenderObject, wgpu::BindGroup),
     floor: (RenderObject, wgpu::BindGroup),
 
     pub input_state: input::InputState,
@@ -51,9 +51,9 @@ struct RenderObject {
     shown_instances: Option<u32>,
 }
 
-const INSTANCED_ROWS: usize = 50;
-const INSTANCED_COLS: usize = 50;
-const INSTANCE_SPACING: f32 = 3.0;
+pub const INSTANCED_ROWS: usize = 50;
+pub const INSTANCED_COLS: usize = 50;
+pub const INSTANCE_SPACING: f32 = 3.0;
 const SPHERE_INSTANCED_ROWS: usize = 10;
 const SPHERE_INSTANCED_COLS: usize = 10;
 const SPHERE_INSTANCE_SPACING: f32 = 15.0;
@@ -120,9 +120,7 @@ impl App {
         let obj1 = build_obj1(&device, &rot_instances);
         let obj2 = build_obj2(&device, &rot_instances);
         let floor = build_floor(&device);
-        let instances_split = sphere_instances.split_at(sphere_instances.len() / 2);
-        let pythagoras_sphere = build_sphere(&device, &Vec::from(instances_split.0), true);
-        let sine_sphere = build_sphere(&device, &Vec::from(instances_split.1), false);
+        let pythagoras_sphere = build_sphere(&device, &sphere_instances);
 
         let create_bind_group = |model_buf, is_instanced_buf, tex_path, tex_name| graphics::build_bind_group(
             &bind_group_layout,
@@ -136,8 +134,7 @@ impl App {
         let obj1_bind_group = create_bind_group(&obj1.model_buf, &obj1.is_instanced_buf, "res/tex/tex4.jpg", "texture_obj1");
         let obj2_bind_group = create_bind_group(&obj2.model_buf, &obj2.is_instanced_buf,"res/tex/tex6.png", "texture_obj2");
         let floor_bind_group = create_bind_group(&floor.model_buf, &floor.is_instanced_buf,"res/tex/floor.png", "texture_floor");
-        let pythagoras_sphere_bind_group = create_bind_group(&pythagoras_sphere.model_buf, &pythagoras_sphere.is_instanced_buf,"res/tex/tex.png", "texture_sphere");
-        let sine_sphere_bind_group = create_bind_group(&sine_sphere.model_buf, &sine_sphere.is_instanced_buf,"res/tex/tex2.png", "texture_sphere");
+        let pythagoras_sphere_bind_group = create_bind_group(&pythagoras_sphere.model_buf, &pythagoras_sphere.is_instanced_buf,"res/tex/bricks.jpg", "texture_sphere");
 
         let depth_texture = graphics::create_depth_texture(&device, &config, "global_depth_texture");
 
@@ -158,7 +155,6 @@ impl App {
             obj2: (obj2, obj2_bind_group),
             floor: (floor, floor_bind_group),
             pythagoras_sphere: (pythagoras_sphere, pythagoras_sphere_bind_group),
-            sine_sphere: (sine_sphere, sine_sphere_bind_group),
             input_state: input::InputState::new(),
             camera,
             camera_uniform,
@@ -304,10 +300,7 @@ impl App {
             * Matrix4::from_scale(sin.abs() + 1.22);
 
         let pythagoras_sphere_model = Matrix4::from_translation(Vector3::new(0.0, FLOOR_Y + 5.0, 0.0))
-            * Matrix4::from_angle_y(cgmath::Rad { 0: now });
-
-        let sine_sphere_model = Matrix4::from_translation(Vector3::new(0.0, FLOOR_Y + 5.0, 0.0))
-            * Matrix4::from_angle_y(cgmath::Rad { 0: now });
+            * Matrix4::from_axis_angle(Vector3::new(1.0, 1.0, 1.0).normalize(), cgmath::Rad { 0: now });
 
         let write_buffer = |dest, src: Matrix4<f32>| self.queue.write_buffer(
             dest,
@@ -320,7 +313,6 @@ impl App {
         write_buffer(&self.obj1.0.model_buf, obj1_model);
         write_buffer(&self.obj2.0.model_buf, obj2_model);
         write_buffer(&self.pythagoras_sphere.0.model_buf, pythagoras_sphere_model);
-        write_buffer(&self.sine_sphere.0.model_buf, sine_sphere_model);
 
         if self.input_state.f_pressed {
             debug!(
@@ -369,7 +361,6 @@ impl App {
                 _ => {}
             }
             App::render_obj(&mut render_pass, &self.pythagoras_sphere);
-            App::render_obj(&mut render_pass, &self.sine_sphere);
             App::render_obj(&mut render_pass, &self.floor);
         }
 
@@ -640,12 +631,8 @@ fn build_floor(device: &wgpu::Device) -> RenderObject {
     }
 }
 
-fn build_sphere(device: &wgpu::Device, instances: &Vec<Instance>, pythagoras: bool) -> RenderObject {
-    let (vertices, indices) = if pythagoras {
-        pythagoras_sphere(5.0, 20)
-    } else {
-        sine_sphere(5.0, 25)
-    };
+fn build_sphere(device: &wgpu::Device, instances: &Vec<Instance>) -> RenderObject {
+    let (vertices, indices) = pythagoras_sphere(5.0, 20);
 
     RenderObject {
         vertices: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -735,161 +722,6 @@ fn pythagoras_sphere(radius: f64, lod: u32) -> (Vec<graphics::Vertex>, Vec<u32>)
                 indices.push((i * verts_per_band) + j);
                 indices.push((i * verts_per_band) + j + 2);
                 indices.push(((i + 1) * verts_per_band) + j + 2);
-            }
-        }
-    }
-
-    (vertices, indices)
-}
-
-fn sine_sphere(radius: f64, lod: u32) -> (Vec<graphics::Vertex>, Vec<u32>) {
-    const PI: f64 = std::f64::consts::PI;
-    let mut vertices = Vec::new();
-    let theta = PI / lod as f64;
-
-    let mut yaw: f64 = 0.0;
-    for _ in 0..lod {
-        let mut pitch: f64 = 0.0;
-        for _ in 0..lod {
-            let x = yaw.cos() * pitch.cos() * radius;
-            let y = pitch.sin() * radius;
-            let z = yaw.sin() * pitch.cos() * radius;
-
-            let tex = [((x / radius) as f32).abs(), ((z / radius) as f32).abs()];
-            vertices.push(graphics::Vertex {
-                position: [x as f32, y as f32, z as f32],
-                tex_coords: tex,
-            });
-            vertices.push(graphics::Vertex {
-                position: [-x as f32, -y as f32, -z as f32],
-                tex_coords: tex,
-            });
-
-            pitch += theta;
-       }
-
-       yaw += theta;
-    }
-
-    let mut indices = Vec::new();
-    let lod2 = lod * 2;
-    for i in 0..lod {
-        for j in 0..lod2 {
-            // triangle 1
-            ij(&mut indices, i, j, lod);
-            i2j2(&mut indices, i, j, lod);
-            i2j(&mut indices, i, j, lod);
-
-            //triangle 2
-            ij(&mut indices, i, j, lod);
-            ij2(&mut indices, i, j, lod);
-            i2j2(&mut indices, i, j, lod);
-        }
-    }
-
-    fn ij(indices: &mut Vec<u32>, i: u32, j: u32, lod: u32) {
-        let lod2 = lod * 2;
-        indices.push((i * lod2) + j);
-    }
-
-    fn i2j(indices: &mut Vec<u32>, i: u32, j: u32, lod: u32) {
-        let calc_i_add = |i| if i == lod - 1 { 0 } else { i + 1 };
-        let lod2 = lod * 2;
-        if i == lod - 1 {
-            indices.push(get_last1(j, lod2));
-        } else {
-            indices.push((calc_i_add(i) * lod2) + j);
-        }
-    }
-
-    fn ij2(indices: &mut Vec<u32>, i: u32, j: u32, lod: u32) {
-        let lod2 = lod * 2;
-        let sub1 = (lod2 - 3) + (j % 2) * 2;
-        let sub2 = (lod2 + 1) + (j % 2) * 2;
-        let add = 2;
-        if j == lod2 - 1 || j == 1 {
-            if (j % 2 == 1 && j > lod) || (j % 2 == 0 && j < lod) {
-                // debug!("i: {}, j: {}", i, j);
-                indices.push((i * lod2) + j - sub1);
-            } else {
-                indices.push((i * lod2) + lod2 * 2 + j - sub2);
-            }
-        } else {
-            if (j % 2 == 1 && j > lod) || (j % 2 == 0 && j < lod) {
-                indices.push((i * lod2) + j + add);
-            } else {
-                indices.push((i * lod2) + j - add);
-            }
-        }
-    }
-
-    fn i2j2(indices: &mut Vec<u32>, i: u32, j: u32, lod: u32) {
-        let lod2 = lod * 2;
-        let sub1 = (lod2 - 3) + (j % 2) * 2;
-        let sub2 = (lod2 + 1) + (j % 2) * 2;
-        let add = 2;
-        let calc_i_add = |i| if i == lod - 1 { 0 } else { i + 1 };
-        if j == lod2 - 1 || j == 1 {
-            if i == lod - 1 {
-                indices.push(get_last2(j, lod2));
-            } else {
-                if (j % 2 == 1 && j > lod) || (j % 2 == 0 && j < lod) {
-                    indices.push((calc_i_add(i) * lod2) + j - sub1);
-                } else {
-                    indices.push((calc_i_add(i) * lod2) + lod2 * 2 + j - sub2);
-                }
-            }
-        } else {
-            if i == lod - 1 {
-                indices.push(get_last2(j, lod2));
-            } else {
-                if (j % 2 == 1 && j > lod) || (j % 2 == 0 && j < lod) {
-                    indices.push((calc_i_add(i) * lod2) + j + add);
-                } else {
-                    indices.push((calc_i_add(i) * lod2) + j - add);
-                }
-            }
-        }
-    }
-
-    fn check_j(j: u32) -> u32 {
-        if j % 2 == 0 { 0 } else { 1 }
-    }
-
-    fn get_last1(j: u32, lod2: u32) -> u32 {
-        if j % 2 == 0 {
-            if j == 0 {
-                1
-            } else {
-                lod2 - j + check_j(j)
-            }
-        } else {
-            if j == 1 {
-                0
-            } else {
-                lod2 - j + 2
-            }
-        }
-    }
-
-    fn get_last2(j: u32, lod2: u32) -> u32 {
-        if j % 2 == 0 {
-            if (j % 2 == 1 && j > lod2 / 2) || (j % 2 == 0 && j < lod2 / 2) {
-                lod2 - 2 - j
-            } else {
-                lod2 + 2 - j
-            }
-        } else {
-            match j {
-                1 => 2,
-                3 => 0,
-                _ => {
-                    if (j % 2 == 1 && j > lod2 / 2) || (j % 2 == 0 && j < lod2 / 2) {
-                        lod2 - j
-                    } else {
-                        lod2 - j + 4
-                    }
-                }
             }
         }
     }
