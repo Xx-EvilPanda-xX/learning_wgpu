@@ -16,11 +16,7 @@ pub struct Camera {
     yaw: f32,
     pitch: f32,
     aspect: f32,
-    fovy: f32,
-    znear: f32,
-    zfar: f32,
-    sens: f32,
-    speed: f32,
+    pub speed: f32,
 }
 
 pub const GL_TO_WGPU: Matrix4<f32> = Matrix4::new(
@@ -47,16 +43,16 @@ impl Camera {
         z: INSTANCED_COLS as f32 * INSTANCE_SPACING + Self::BORDER_SPACE
     };
     const MIN_POS: Vector3<f32> = Vector3 { x: -Self::BORDER_SPACE, y: -Self::BORDER_SPACE, z: -Self::BORDER_SPACE };
+    const FOVY: f32 = 90.0;
+    const ZNEAR: f32 = 0.1;
+    const ZFAR: f32 = 1000.0;
+    const SENS: f32 = 20.0;
 
     pub fn new(
         loc: Point3<f32>,
         yaw: f32,
         pitch: f32,
         aspect: f32,
-        fovy: f32,
-        znear: f32,
-        zfar: f32,
-        sens: f32,
         speed: f32,
     ) -> Self {
         let mut cam = Camera {
@@ -69,10 +65,6 @@ impl Camera {
             yaw,
             pitch,
             aspect,
-            fovy,
-            znear,
-            zfar,
-            sens,
             speed,
         };
         cam.calc_vecs();
@@ -81,7 +73,7 @@ impl Camera {
 
     pub fn build_view_proj(&self) -> Matrix4<f32> {
         let view = Matrix4::look_at_rh(self.loc, self.loc + self.forward, self.up);
-        let proj = cgmath::perspective(cgmath::Deg(self.fovy), self.aspect, self.znear, self.zfar);
+        let proj = cgmath::perspective(cgmath::Deg(Self::FOVY), self.aspect, Self::ZNEAR, Self::ZFAR);
         GL_TO_WGPU * proj * view
     }
 
@@ -117,7 +109,7 @@ impl Camera {
     }
 
     fn update_loc(&mut self, dt: f32) {
-        let s = &self.speed;
+        let s = self.speed;
         let v = &self.vel;
 
         self.loc.x += s * v.x * dt;
@@ -138,15 +130,16 @@ impl Camera {
         self.vel.y += self.acc.y * dt;
 
         let amp = dt * Self::DEACCELERATION;
-        let vel2d = Vector2::new(self.vel.x, self.vel.z);
+        let vel_2d = Vector2::new(self.vel.x, self.vel.z);
+        const RIGHT_ANGLE: f32 = std::f32::consts::PI / 2.0;
 
         // when not accelerating in x, try to deaccelerate that vel component.
         // done by nudging the velocity towards the right vector using the forward vector
         if self.acc.x == 0.0 && self.acc.z != 0.0 {
-            let forward2d = Vector2::new(forward.x, forward.z);
+            let forward_2d = Vector2::new(forward.x, forward.z);
             // calculate the angle between the velocity vector and forward vector (used to determine whether to add or sub from vel)
-            let theta_right_vel = (forward2d.dot(vel2d) / (forward2d.magnitude() * vel2d.magnitude())).acos().to_degrees();
-            if theta_right_vel > 90.0 {
+            let theta_right_vel = (forward_2d.dot(vel_2d) / (forward_2d.magnitude() * vel_2d.magnitude())).acos();
+            if theta_right_vel > RIGHT_ANGLE {
                 // nudge velocity
                 self.vel.x += forward.x * amp;
                 self.vel.z += forward.z * amp;
@@ -157,9 +150,9 @@ impl Camera {
             }
         // repeat for when not accelerating on the z
         } else if self.acc.x != 0.0 && self.acc.z == 0.0 { 
-            let right2d = Vector2::new(right.x, right.z);
-            let theta_right_vel = (right2d.dot(vel2d) / (right2d.magnitude() * vel2d.magnitude())).acos().to_degrees();
-            if theta_right_vel > 90.0 {
+            let right_2d = Vector2::new(right.x, right.z);
+            let theta_right_vel = (right_2d.dot(vel_2d) / (right_2d.magnitude() * vel_2d.magnitude())).acos();
+            if theta_right_vel > RIGHT_ANGLE {
                 self.vel.x += right.x * amp;
                 self.vel.z += right.z * amp;
             } else {
@@ -167,9 +160,10 @@ impl Camera {
                 self.vel.z -= right.z * amp;
             }
         // deaccelerate both x and z when neither are accelerating
-        } else if self.acc.x == 0.0 && self.acc.z == 0.0 && vel2d.x != 0.0 && vel2d.y != 0.0 {
-            let decreased = vel2d.normalize_to(vel2d.magnitude() - amp);
-            self.vel = Vector3::new(decreased.x, self.vel.y, decreased.y);
+        } else if self.acc.x == 0.0 && self.acc.z == 0.0 && vel_2d.x != 0.0 && vel_2d.y != 0.0 {
+            let decreased = vel_2d.normalize_to((vel_2d.magnitude() - amp).max(0.0));
+            self.vel.x = decreased.x;
+            self.vel.z = decreased.y;
         }
 
         // deaccelerate y
@@ -205,8 +199,8 @@ impl Camera {
     }
 
     pub fn update_look(&mut self, look: (f32, f32), dt: f32) {
-        self.yaw += self.sens * look.0 * dt;
-        self.pitch += self.sens * -look.1 * dt;
+        self.yaw += Self::SENS * look.0 * dt;
+        self.pitch += Self::SENS * -look.1 * dt;
 
         if self.yaw > 360.0 {
             self.yaw = 0.0;
@@ -244,7 +238,13 @@ impl Camera {
 fn step(x: &mut f32, to: f32, amp: f32) {
     if *x < to {
         *x += amp;
+        if *x > to {
+            *x = to;
+        }
     } else {
         *x -= amp;
+        if *x < to {
+            *x = to;
+        }
     }
 }

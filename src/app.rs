@@ -69,11 +69,7 @@ impl App {
             45.0,
             0.0,
             config.width as f32 / config.height as f32,
-            90.0,
-            0.1,
-            1000.0,
-            20.0,
-            5.0,
+            5.0
         );
 
         let mut camera_uniform = RawMatrix::new();
@@ -632,7 +628,7 @@ fn build_floor(device: &wgpu::Device) -> RenderObject {
 }
 
 fn build_sphere(device: &wgpu::Device, instances: &Vec<Instance>) -> RenderObject {
-    let (vertices, indices) = pythagoras_sphere(5.0, 20);
+    let (vertices, indices) = pythagoras_sphere(5.0, 75);
 
     RenderObject {
         vertices: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {

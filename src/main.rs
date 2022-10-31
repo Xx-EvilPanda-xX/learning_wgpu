@@ -34,6 +34,8 @@ fn run_app() {
     let mut app = app::App::new(&window);
     let mut last_frame = std::time::Instant::now();
     let mut is_focused = false;
+    let mut last_fps_update = std::time::Instant::now();
+    let mut frames = 0;
     info!("Done initializing.");
 
     window.set_visible(true);
@@ -112,6 +114,14 @@ fn run_app() {
                 }
             }
             Event::MainEventsCleared => {
+                frames += 1;
+                let now = std::time::Instant::now();
+                if now.duration_since(last_fps_update) >= std::time::Duration::from_secs(1) {
+                    window.set_title(&format!("learing_wgpu | FPS: {}", frames));
+                    frames = 0;
+                    last_fps_update = now;
+                }
+
                 let now = std::time::Instant::now();
                 app.delta_time = now.duration_since(last_frame).as_secs_f64();
                 last_frame = now;

@@ -43,9 +43,9 @@ fn vs_main(in: VertexInput, instance: InstanceInput) -> VertexOutput {
     );
 
     if is_instanced == 1 {
-        out.clip_position = camera.view_proj * m * model.model  * vec4<f32>(in.position, 1.0);
+        out.clip_position = camera.view_proj * m * model.model * vec4<f32>(in.position, 1.0);
     } else if is_instanced == 0 {
-        out.clip_position = camera.view_proj * model.model  * vec4<f32>(in.position, 1.0);
+        out.clip_position = camera.view_proj * model.model * vec4<f32>(in.position, 1.0);
     }
 
     out.tex_coords = in.tex_coords;
