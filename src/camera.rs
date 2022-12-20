@@ -16,7 +16,7 @@ pub struct Camera {
     yaw: f32,
     pitch: f32,
     aspect: f32,
-    pub speed: f32,
+    speed: f32,
 }
 
 pub const GL_TO_WGPU: Matrix4<f32> = Matrix4::new(
@@ -33,7 +33,8 @@ impl Camera {
         z: 0.0,
     };
 
-    const SPRINT_SPEED: f32 = 2.0;
+    const SPRINT_SPEED: f32 = 10.0;
+    const WALK_SPEED: f32 = 5.0;
     const DEACCELERATION: f32 = 5.0;
     const ACCELERATION: f32 = 5.0;
     const BORDER_SPACE: f32 = 150.0;
@@ -53,7 +54,6 @@ impl Camera {
         yaw: f32,
         pitch: f32,
         aspect: f32,
-        speed: f32,
     ) -> Self {
         let mut cam = Camera {
             loc,
@@ -65,7 +65,7 @@ impl Camera {
             yaw,
             pitch,
             aspect,
-            speed,
+            speed: Self::WALK_SPEED,
         };
         cam.calc_vecs();
         cam
@@ -80,6 +80,7 @@ impl Camera {
     pub fn update_pos(&mut self, dt: f32, input: &input::InputState) {
         self.update_acc(input);
         self.update_vel(dt);
+        self.update_speed(dt, input);
         self.update_loc(dt);
 
         if self.loc.x > Self::MAX_POS.x {
@@ -115,6 +116,21 @@ impl Camera {
         self.loc.x += s * v.x * dt;
         self.loc.y += s * v.y * dt;
         self.loc.z += s * v.z * dt;
+    }
+
+    fn update_speed(&mut self, dt: f32, input: &input::InputState) {
+        if input.ctrl_pressed && input.movement_key_pressed() {
+            self.speed += dt * 5.0;
+        } else {
+            self.speed -= dt * 5.0;
+        }
+
+        if self.speed > Self::SPRINT_SPEED {
+            self.speed = Self::SPRINT_SPEED;
+        }
+        if self.speed < Self::WALK_SPEED {
+            self.speed = Self::WALK_SPEED;
+        }
     }
 
     fn update_vel(&mut self, dt: f32) {
@@ -192,9 +208,6 @@ impl Camera {
         }
         if input.shift_pressed {
             self.acc.y -= acc;
-        }
-        if input.ctrl_pressed {
-            self.acc.x *= Self::SPRINT_SPEED;
         }
     }
 

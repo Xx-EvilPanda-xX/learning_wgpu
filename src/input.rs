@@ -81,4 +81,10 @@ impl InputState {
         self.unhandled_mouse_move = (0.0, 0.0);
         unhandled
     }
+
+    pub fn movement_key_pressed(&self) -> bool {
+        self.space_pressed || self.shift_pressed ||
+        self.forward_pressed || self.backward_pressed ||
+        self.left_pressed || self.right_pressed
+    }
 }

@@ -2,6 +2,7 @@ use crate::camera::Camera;
 use crate::graphics;
 use crate::graphics::Instance;
 use crate::graphics::RawMatrix;
+use crate::graphics::Vertex;
 use crate::input;
 use cgmath::InnerSpace;
 use cgmath::{Matrix4, Rotation3, SquareMatrix, Vector3};
@@ -68,8 +69,7 @@ impl App {
             (0.0, 0.0, 0.0).into(),
             45.0,
             0.0,
-            config.width as f32 / config.height as f32,
-            5.0
+            config.width as f32 / config.height as f32
         );
 
         let mut camera_uniform = RawMatrix::new();
@@ -296,7 +296,7 @@ impl App {
             * Matrix4::from_scale(sin.abs() + 1.22);
 
         let pythagoras_sphere_model = Matrix4::from_translation(Vector3::new(0.0, FLOOR_Y + 5.0, 0.0))
-            * Matrix4::from_axis_angle(Vector3::new(1.0, 1.0, 1.0).normalize(), cgmath::Rad { 0: now });
+            * Matrix4::from_axis_angle(Vector3::new(1.0, 1.0, 1.0).normalize(), cgmath::Rad { 0: now / 10.0 });
 
         let write_buffer = |dest, src: Matrix4<f32>| self.queue.write_buffer(
             dest,
@@ -351,13 +351,14 @@ impl App {
             });
 
             render_pass.set_pipeline(&self.render_pipeline);
+            let rp = &mut render_pass;
             match self.selected_obj {
-                0 => App::render_obj(&mut render_pass, &self.obj1),
-                1 => App::render_obj(&mut render_pass, &self.obj2),
+                0 => App::render_obj(rp, &self.obj1),
+                1 => App::render_obj(rp, &self.obj2),
                 _ => {}
             }
-            App::render_obj(&mut render_pass, &self.pythagoras_sphere);
-            App::render_obj(&mut render_pass, &self.floor);
+            App::render_obj(rp, &self.pythagoras_sphere);
+            App::render_obj(rp, &self.floor);
         }
 
         self.queue.submit(std::iter::once(encoder.finish()));
@@ -628,7 +629,7 @@ fn build_floor(device: &wgpu::Device) -> RenderObject {
 }
 
 fn build_sphere(device: &wgpu::Device, instances: &Vec<Instance>) -> RenderObject {
-    let (vertices, indices) = pythagoras_sphere(5.0, 75);
+    let (vertices, indices) = gen_sphere((0.0, 0.0, 0.0), 5.0, 75);
 
     RenderObject {
         vertices: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -668,59 +669,102 @@ fn build_sphere(device: &wgpu::Device, instances: &Vec<Instance>) -> RenderObjec
     }
 }
 
-fn pythagoras_sphere(radius: f64, lod: u32) -> (Vec<graphics::Vertex>, Vec<u32>) {
-    let mut vertices = Vec::new();
+fn gen_sphere(pos: (f64, f64, f64), radius: f64, lod: u32) -> (Box<[Vertex]>, Box<[u32]>) {
+    // + 1 to create full circle (n faces, but n + 1 vertices in a half circle)
+    let iters = (lod * 2 + 1) as usize;
     let factor = radius / lod as f64;
-    let mut verts_per_band = 0;
-    let mut bands = 0;
+
+    let mut vertices = new_array(iters * iters * 2, Vertex::default());
 
     let mut y = -radius;
-    for _ in 0..=(lod * 2) {
-        verts_per_band = 0;
-        let band_radius = (radius * radius - y * y).max(0.0).sqrt();
-        let band_factor = band_radius / lod as f64;
+    for i in 0..iters {
+        let layer_radius = fast_sqrt((radius * radius - y * y).max(0.0) as f32) as f64;
+        let layer_factor = layer_radius / lod as f64;
 
-        let mut x = -band_radius;
-        for _ in 0..=(lod * 2) {
-            let z = (band_radius * band_radius - x * x).max(0.0).sqrt();
+        let mut x = -layer_radius;
+        for j in 0..iters {
+            let z = fast_sqrt((layer_radius * layer_radius - x * x).max(0.0) as f32) as f64;
             let tex = [((x / radius) as f32).abs(), ((z / radius) as f32).abs()];
-            vertices.push(graphics::Vertex {
-                position: [x as f32, y as f32, z as f32],
-                tex_coords: tex,
-            });
-            vertices.push(graphics::Vertex {
-                position: [x as f32, y as f32, -z as f32],
-                tex_coords: tex,
-            });
 
-            x += band_factor;
-            verts_per_band += 2;
+            let px = x + pos.0;
+            let py = y + pos.1;
+            let pz1 = z + pos.2;
+            let pz2 = -z + pos.2;
+            vertices[(i * iters + j) * 2] = Vertex {
+                position: [px as f32, py as f32, pz1 as f32],
+                tex_coords: tex,
+            };
+            vertices[(i * iters + j) * 2 + 1] = Vertex {
+                position: [px as f32, py as f32, pz2 as f32],
+                tex_coords: tex,
+            };
+
+            x += layer_factor;
         }
 
         y += factor;
-        bands += 1;
     }
 
-    let mut indices = Vec::new();
-    for i in 0..bands - 1 {
-        for j in 0..verts_per_band - 2 {
+    let layers = lod * 2;
+    let faces_per_layer = lod * 4;
+    let mut indices = new_array((layers * faces_per_layer * 6) as usize, 0);
+
+    // verts per layer (+ 2 beucase + 1 for each side)
+    let vpl = faces_per_layer + 2;
+    const VERTS_PER_FACE: u32 = 6;
+    for i in 0..layers {
+        for j in 0..faces_per_layer {
+            let idx = ((i * faces_per_layer + j) * VERTS_PER_FACE) as usize;
+            let x0y0 = (i * vpl) + j; // current vertex
+            let x1y0 = (i * vpl) + j + 2; // vertex directly to the left of the current vertex
+            let x0y1 = ((i + 1) * vpl) + j; // vertex directly above current vertex
+            let x1y1 = ((i + 1) * vpl) + j + 2; // vertex above and to the left from current vertex
             if j % 2 != 0 {
-                indices.push((i * verts_per_band) + j);
-                indices.push(((i + 1) * verts_per_band) + j);
-                indices.push(((i + 1) * verts_per_band) + j + 2);
-                indices.push((i * verts_per_band) + j);
-                indices.push(((i + 1) * verts_per_band) + j + 2);
-                indices.push((i * verts_per_band) + j + 2);
+                indices[idx] = x1y0;
+                indices[idx + 1] = x0y1;
+                indices[idx + 2] = x1y1;
+                indices[idx + 3] = x1y0;
+                indices[idx + 4] = x0y0;
+                indices[idx + 5] = x0y1;
             } else {
-                indices.push((i * verts_per_band) + j);
-                indices.push(((i + 1) * verts_per_band) + j + 2);
-                indices.push(((i + 1) * verts_per_band) + j);
-                indices.push((i * verts_per_band) + j);
-                indices.push((i * verts_per_band) + j + 2);
-                indices.push(((i + 1) * verts_per_band) + j + 2);
+                indices[idx] = x0y0;
+                indices[idx + 1] = x1y1;
+                indices[idx + 2] = x0y1;
+                indices[idx + 3] = x0y0;
+                indices[idx + 4] = x1y0;
+                indices[idx + 5] = x1y1;
             }
         }
     }
 
     (vertices, indices)
+}
+
+fn new_array<T: Copy>(len: usize, init: T) -> Box<[T]> {
+    vec![init; len].into_boxed_slice()
+}
+
+fn fast_sqrt(num: f32) -> f32 {
+    let mut i: i32;
+    let x2 = num * 0.5;
+    let mut y = num;
+    const THREE_HALFS: f32 = 1.5;
+
+    // SAFETY: all we are doing here is putting the bits of an f32 into an i32, with the dereference of a completely valid pointer
+    i = unsafe {
+        let ptr_y: *const f32 = &y;
+        *(ptr_y as *const i32)
+    };
+
+    i = 0x5f3759df - (i >> 1);
+
+    // SAFETY: all we are doing here is putting the bits of an i32 into an f32, with the dereference of a completely valid pointer
+    y = unsafe {
+        let ptr_i: *const i32 = &i;
+        *(ptr_i as *const f32)
+    };
+
+    y = y * (THREE_HALFS - (x2 * y * y));
+    y = y * (THREE_HALFS - (x2 * y * y));
+    1.0 / y
 }
